@@ -1,0 +1,881 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>IP Tools Design</title>
+<meta name="description" content="Design mockups for IP Tools: Ping &amp; Traceroute — iPhone and iPad screens for Ping, Traceroute and the BGP AS-path map.">
+<style>
+:root {
+  --page-bg: #E9E9EE; --page-fg: #1C1C1E; --page-muted: #5F5F66; --page-card: #FFFFFF; --page-line: rgba(0,0,0,.08);
+  --bezel: #1C1C1E; --bezel-hi: #3A3A3C;
+  --scr-bg: #F2F2F7; --scr-card: #FFFFFF; --label: #000000; --label2: rgba(60,60,67,.62); --label3: rgba(60,60,67,.32);
+  --sep: rgba(60,60,67,.16); --fill: rgba(118,118,128,.12); --fill2: rgba(118,118,128,.20);
+  --bar-bg: rgba(249,249,251,.94); --canvas: #FAFAFC;
+  --blue: #007AFF; --blue-soft: rgba(0,122,255,.12); --green: #34C759; --orange: #FF9500; --red: #FF3B30; --gray: #8E8E93;
+  --g-edge: rgba(60,60,67,.30); --g-node: #FFFFFF; --g-node-line: rgba(60,60,67,.22);
+  color-scheme: light;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --page-bg: #0E0E10; --page-fg: #F2F2F7; --page-muted: #A1A1A8; --page-card: #1C1C1E; --page-line: rgba(255,255,255,.08);
+    --bezel: #2C2C2E; --bezel-hi: #48484A;
+    --scr-bg: #000000; --scr-card: #1C1C1E; --label: #FFFFFF; --label2: rgba(235,235,245,.62); --label3: rgba(235,235,245,.30);
+    --sep: rgba(84,84,88,.6); --fill: rgba(118,118,128,.24); --fill2: rgba(118,118,128,.34);
+    --bar-bg: rgba(22,22,24,.94); --canvas: #0B0B0D;
+    --blue: #0A84FF; --blue-soft: rgba(10,132,255,.20); --green: #30D158; --orange: #FF9F0A; --red: #FF453A; --gray: #8E8E93;
+    --g-edge: rgba(235,235,245,.28); --g-node: #1C1C1E; --g-node-line: rgba(235,235,245,.20);
+    color-scheme: dark;
+  }
+}
+:root[data-theme="dark"] {
+  --page-bg: #0E0E10; --page-fg: #F2F2F7; --page-muted: #A1A1A8; --page-card: #1C1C1E; --page-line: rgba(255,255,255,.08);
+  --bezel: #2C2C2E; --bezel-hi: #48484A;
+  --scr-bg: #000000; --scr-card: #1C1C1E; --label: #FFFFFF; --label2: rgba(235,235,245,.62); --label3: rgba(235,235,245,.30);
+  --sep: rgba(84,84,88,.6); --fill: rgba(118,118,128,.24); --fill2: rgba(118,118,128,.34);
+  --bar-bg: rgba(22,22,24,.94); --canvas: #0B0B0D;
+  --blue: #0A84FF; --blue-soft: rgba(10,132,255,.20); --green: #30D158; --orange: #FF9F0A; --red: #FF453A; --gray: #8E8E93;
+  --g-edge: rgba(235,235,245,.28); --g-node: #1C1C1E; --g-node-line: rgba(235,235,245,.20);
+  color-scheme: dark;
+}
+
+* { box-sizing: border-box; }
+html { -webkit-text-size-adjust: 100%; }
+body {
+  margin: 0; background: var(--page-bg); color: var(--page-fg);
+  font: 15px/1.5 -apple-system, BlinkMacSystemFont, "SF Pro Text", "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+  overflow-x: hidden;
+}
+code, .mono { font-family: ui-monospace, "SF Mono", SFMono-Regular, Menlo, Consolas, monospace; }
+code { font-size: .9em; background: var(--page-line); padding: .1em .35em; border-radius: 5px; }
+
+/* ---------- page chrome ---------- */
+.top { max-width: 1240px; margin: 0 auto; padding: 32px 16px 8px; display: flex; flex-wrap: wrap; gap: 16px 24px; align-items: center; justify-content: space-between; }
+.brand { display: flex; gap: 16px; align-items: center; min-width: 0; }
+.brand svg { flex: none; border-radius: 22%; box-shadow: 0 6px 18px rgba(0,0,0,.18); }
+.brand h1 { margin: 0; font-size: clamp(20px, 4.4vw, 28px); line-height: 1.15; letter-spacing: -.02em; }
+.brand p { margin: 2px 0 0; color: var(--page-muted); }
+.meta { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+.meta span { font-size: 13px; padding: 4px 10px; border-radius: 99px; background: var(--page-card); border: 1px solid var(--page-line); color: var(--page-muted); }
+#theme { font: inherit; font-size: 13px; padding: 5px 12px; border-radius: 99px; border: 1px solid var(--page-line); background: var(--page-fg); color: var(--page-bg); cursor: pointer; }
+.page { max-width: 1240px; margin: 0 auto; padding: 0 16px 48px; }
+.page h2 { font-size: 22px; letter-spacing: -.01em; margin: 40px 0 6px; }
+.lead { color: var(--page-muted); max-width: 820px; margin: 0 0 20px; }
+.grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(100%, 260px), 1fr)); gap: 32px 24px; }
+.shot { margin: 0; display: flex; flex-direction: column; align-items: center; gap: 12px; min-width: 0; }
+.shot figcaption { max-width: 300px; font-size: 13px; color: var(--page-muted); text-align: center; }
+.shot figcaption b { display: block; color: var(--page-fg); font-size: 14px; }
+.shot.wide figcaption { max-width: 720px; }
+.foot { text-align: center; color: var(--page-muted); font-size: 13px; padding: 24px 16px 40px; }
+
+/* ---------- device frames ---------- */
+.phone { width: min(300px, 100%); padding: 9px; border-radius: 48px; background: var(--bezel); box-shadow: inset 0 0 0 1.5px var(--bezel-hi), 0 18px 40px rgba(0,0,0,.22); }
+.phone .screen { position: relative; aspect-ratio: 390 / 844; border-radius: 40px; overflow: hidden; background: var(--scr-bg); container-type: inline-size; }
+.ipad { width: 100%; max-width: 980px; padding: 12px; border-radius: 34px; background: var(--bezel); box-shadow: inset 0 0 0 1.5px var(--bezel-hi), 0 18px 40px rgba(0,0,0,.22); }
+.ipad .screen { position: relative; aspect-ratio: 1180 / 820; border-radius: 22px; overflow: hidden; background: var(--scr-bg); container-type: inline-size; }
+
+/* 1 --u == 1 iOS point */
+.phone .ui { --u: calc(100cqw / 390); }
+.ipad .ui { --u: calc(100cqw / 1180); }
+.ui { position: absolute; inset: 0; color: var(--label); font-size: calc(17 * var(--u)); line-height: 1.25; overflow: hidden;
+  font-family: -apple-system, BlinkMacSystemFont, "SF Pro Text", "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif; font-variant-numeric: tabular-nums; }
+.ui svg { fill: currentColor; }
+.ui small { font-size: calc(13 * var(--u)); color: var(--label2); display: block; }
+.ui .muted { color: var(--label2); }
+.ui .sm { font-size: calc(13 * var(--u)); }
+.ui .grow { flex: 1; min-width: 0; }
+.ui .mono { font-family: ui-monospace, "SF Mono", Menlo, monospace; }
+
+/* status bar */
+.sb { height: calc(54 * var(--u)); display: flex; align-items: center; justify-content: space-between; padding: calc(6 * var(--u)) calc(30 * var(--u)) 0 calc(44 * var(--u)); font-weight: 600; font-size: calc(17 * var(--u)); }
+.island { width: calc(124 * var(--u)); height: calc(36 * var(--u)); background: #000; border-radius: 99px; position: absolute; left: 50%; top: calc(11 * var(--u)); transform: translateX(-50%); }
+.sb-ic { display: flex; gap: calc(6 * var(--u)); align-items: center; }
+.sb-sig { width: calc(18 * var(--u)); height: calc(12 * var(--u)); }
+.sb-wifi { width: calc(16 * var(--u)); height: calc(12 * var(--u)); }
+.sb-bat { width: calc(27 * var(--u)); height: calc(13 * var(--u)); }
+
+/* nav */
+.tb { display: flex; justify-content: flex-end; gap: calc(10 * var(--u)); padding: calc(2 * var(--u)) calc(16 * var(--u)) 0; height: calc(44 * var(--u)); align-items: center; }
+.tbtn { width: calc(34 * var(--u)); height: calc(34 * var(--u)); border-radius: 50%; background: var(--fill); color: var(--blue); display: grid; place-items: center; }
+.tbtn svg { width: calc(20 * var(--u)); height: calc(20 * var(--u)); }
+.tbtn.on { background: var(--blue-soft); }
+.lt { font-size: calc(34 * var(--u)); font-weight: 700; letter-spacing: -.02em; margin: 0; padding: 0 calc(16 * var(--u)) calc(8 * var(--u)); line-height: 1.15; }
+.inl { height: calc(44 * var(--u)); display: grid; grid-template-columns: 1fr auto 1fr; align-items: center; padding: 0 calc(16 * var(--u)); }
+.inl b { font-size: calc(17 * var(--u)); }
+.tb2 { justify-self: end; }
+
+/* target bar */
+.target { display: flex; gap: calc(10 * var(--u)); align-items: center; padding: calc(4 * var(--u)) calc(16 * var(--u)) calc(10 * var(--u)); }
+.field { flex: 1; min-width: 0; height: calc(40 * var(--u)); border-radius: calc(12 * var(--u)); background: var(--fill); display: flex; align-items: center; gap: calc(8 * var(--u)); padding: 0 calc(10 * var(--u)); color: var(--label2); }
+.field svg { width: calc(19 * var(--u)); height: calc(19 * var(--u)); flex: none; }
+.field .val { flex: 1; min-width: 0; color: var(--label); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.field .val.ph { color: var(--label3); }
+.field .clr { color: var(--label3); width: calc(18 * var(--u)); height: calc(18 * var(--u)); }
+.btn { height: calc(40 * var(--u)); padding: 0 calc(18 * var(--u)); border-radius: 99px; display: grid; place-items: center; font-weight: 600; color: #fff; flex: none; }
+.btn.go { background: var(--blue); }
+.btn.stop { background: var(--red); }
+.btn.dis { background: var(--fill2); color: var(--label3); }
+
+.status { margin: 0 calc(16 * var(--u)) calc(10 * var(--u)); font-size: calc(13 * var(--u)); color: var(--label2); display: flex; align-items: center; gap: calc(6 * var(--u)); white-space: nowrap; overflow: hidden; }
+.status b { color: var(--label); font-weight: 600; }
+.live { width: calc(8 * var(--u)); height: calc(8 * var(--u)); border-radius: 50%; background: var(--green); box-shadow: 0 0 0 calc(3 * var(--u)) rgba(52,199,89,.25); flex: none; }
+
+.card { background: var(--scr-card); border-radius: calc(12 * var(--u)); margin: 0 calc(16 * var(--u)) calc(12 * var(--u)); }
+.sec { margin: calc(6 * var(--u)) calc(32 * var(--u)) calc(6 * var(--u)); font-size: calc(13 * var(--u)); color: var(--label2); text-transform: uppercase; letter-spacing: .02em; }
+
+/* ping stats */
+.stats { display: grid; grid-template-columns: repeat(3, 1fr); padding: calc(4 * var(--u)) 0; }
+.stats > div { padding: calc(8 * var(--u)) calc(14 * var(--u)); border-right: .5px solid var(--sep); }
+.stats > div:nth-child(3n) { border-right: 0; }
+.stats > div:nth-child(-n+3) { border-bottom: .5px solid var(--sep); }
+.stats small { font-size: calc(12 * var(--u)); }
+.stats b { font-size: calc(22 * var(--u)); font-weight: 600; letter-spacing: -.01em; }
+.stats i { font-style: normal; font-size: calc(12 * var(--u)); color: var(--label2); margin-left: calc(3 * var(--u)); }
+.t-warn { color: var(--orange); }
+.chartcard { padding: calc(10 * var(--u)) calc(12 * var(--u)) calc(6 * var(--u)); }
+.ch-h { display: flex; justify-content: space-between; font-size: calc(15 * var(--u)); font-weight: 600; }
+.ch-h .muted { font-weight: 400; font-size: calc(12 * var(--u)); }
+.chart { width: 100%; height: auto; display: block; margin-top: calc(4 * var(--u)); }
+.c-grid { stroke: var(--sep); stroke-width: .6; }
+.c-ax { fill: var(--label2); font-size: 8px; text-anchor: end; }
+.c-avg { stroke: var(--label2); stroke-width: .8; stroke-dasharray: 3 3; }
+.c-line { fill: none; stroke: var(--blue); stroke-width: 1.8; stroke-linejoin: round; }
+.c-dot { fill: var(--blue); }
+.c-to { stroke: var(--red); stroke-width: 1.8; fill: none; stroke-linecap: round; }
+
+/* lists */
+.list { list-style: none; padding: 0; overflow: hidden; }
+.row { display: flex; align-items: center; gap: calc(10 * var(--u)); min-height: calc(40 * var(--u)); padding: calc(6 * var(--u)) calc(16 * var(--u)); border-bottom: .5px solid var(--sep); font-size: calc(15 * var(--u)); }
+.row:last-child, .hop:last-child { border-bottom: 0; }
+.dot { width: calc(9 * var(--u)); height: calc(9 * var(--u)); border-radius: 50%; flex: none; display: inline-block; }
+.dot.good { background: var(--green); } .dot.warn { background: var(--orange); } .dot.bad { background: var(--red); } .dot.to { background: var(--label3); }
+.seq { color: var(--label2); width: calc(30 * var(--u)); font-size: calc(13 * var(--u)); }
+.rtt { font-weight: 600; }
+.ric { width: calc(18 * var(--u)); height: calc(18 * var(--u)); color: var(--label2); }
+.lnk { color: var(--blue); display: inline-flex; align-items: center; gap: calc(2 * var(--u)); }
+.lnk svg, .chev { width: calc(13 * var(--u)); height: calc(13 * var(--u)); color: var(--label3); }
+.row.as b { font-size: calc(15 * var(--u)); }
+.row.as small { font-size: calc(12 * var(--u)); }
+.bar { width: calc(56 * var(--u)); height: calc(5 * var(--u)); background: var(--fill); border-radius: 9px; overflow: hidden; }
+.bar i { display: block; height: 100%; background: var(--blue); border-radius: 9px; }
+
+/* traceroute */
+.summary { display: flex; gap: calc(10 * var(--u)); align-items: center; padding: calc(10 * var(--u)) calc(14 * var(--u)); }
+.summary .ok { width: calc(26 * var(--u)); height: calc(26 * var(--u)); color: var(--green); flex: none; }
+.summary b { font-size: calc(15 * var(--u)); }
+.th { display: flex; gap: calc(10 * var(--u)); margin: 0 calc(32 * var(--u)) calc(5 * var(--u)); font-size: calc(11 * var(--u)); color: var(--label2); text-transform: uppercase; letter-spacing: .03em; }
+.hop { display: flex; align-items: center; gap: calc(10 * var(--u)); padding: calc(6 * var(--u)) calc(14 * var(--u)) calc(6 * var(--u)) calc(12 * var(--u)); border-bottom: .5px solid var(--sep); }
+.hn { width: calc(24 * var(--u)); height: calc(24 * var(--u)); border-radius: 50%; background: var(--fill); display: grid; place-items: center; font-size: calc(12 * var(--u)); font-weight: 600; flex: none; color: var(--label2); }
+.hop.dest .hn { background: var(--green); color: #fff; }
+.hop b { display: block; font-size: calc(14 * var(--u)); font-weight: 500; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.hop small { font-size: calc(12 * var(--u)); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.asn { display: inline-block; font-size: calc(11 * var(--u)); font-weight: 600; color: var(--blue); background: var(--blue-soft); border-radius: calc(5 * var(--u)); padding: 0 calc(5 * var(--u)); line-height: 1.5; margin-right: calc(3 * var(--u)); }
+.asn.priv { color: var(--label2); background: var(--fill); }
+.hr { text-align: right; flex: none; }
+.hr b { font-size: calc(14 * var(--u)); font-weight: 600; }
+.hr small { font-size: calc(10.5 * var(--u)); }
+
+/* bgp */
+.pfx { padding: calc(10 * var(--u)) calc(14 * var(--u)); }
+.pfx b { font-size: calc(20 * var(--u)); font-weight: 700; }
+.chips { display: flex; flex-wrap: wrap; gap: calc(6 * var(--u)); margin-top: calc(8 * var(--u)); }
+.chips span { font-size: calc(11.5 * var(--u)); color: var(--label2); background: var(--fill); border-radius: 99px; padding: calc(2 * var(--u)) calc(8 * var(--u)); }
+.seg { display: flex; margin: 0 calc(16 * var(--u)) calc(10 * var(--u)); background: var(--fill); border-radius: calc(9 * var(--u)); padding: calc(2 * var(--u)); }
+.seg span { flex: 1; text-align: center; font-size: calc(13 * var(--u)); font-weight: 500; padding: calc(5 * var(--u)) 0; border-radius: calc(7 * var(--u)); }
+.seg .on { background: var(--scr-card); box-shadow: 0 1px 3px rgba(0,0,0,.12); font-weight: 600; }
+.graphwrap { position: relative; margin: 0 calc(16 * var(--u)); height: calc(404 * var(--u)); background: var(--canvas); border-radius: calc(12 * var(--u)); border: .5px solid var(--sep); overflow: hidden; }
+.graphwrap .graph { position: absolute; right: 0; top: calc(6 * var(--u)); height: calc(380 * var(--u)); width: auto; }
+.zoom { position: absolute; right: calc(10 * var(--u)); bottom: calc(10 * var(--u)); width: calc(34 * var(--u)); height: calc(34 * var(--u)); border-radius: 50%; background: var(--bar-bg); box-shadow: 0 1px 6px rgba(0,0,0,.18); display: grid; place-items: center; color: var(--blue); }
+.zoom svg { width: calc(18 * var(--u)); height: calc(18 * var(--u)); }
+.selcard { position: absolute; left: calc(16 * var(--u)); right: calc(16 * var(--u)); bottom: calc(92 * var(--u)); background: var(--scr-card); border-radius: calc(14 * var(--u)); box-shadow: 0 4px 20px rgba(0,0,0,.16); padding: calc(10 * var(--u)) calc(14 * var(--u)); display: flex; align-items: center; gap: calc(8 * var(--u)); }
+.selcard > div { flex: 1; min-width: 0; }
+.selcard b { font-size: calc(15 * var(--u)); display: block; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.selcard .lnk { font-size: calc(15 * var(--u)); }
+
+/* graph svg */
+.g-edge { fill: none; stroke: var(--g-edge); stroke-linecap: round; }
+.g-edge.g-lat { stroke-dasharray: 3 4; }
+.g-edge.g-hl { stroke: var(--blue); opacity: 1; }
+.g-node rect { fill: var(--g-node); stroke: var(--g-node-line); stroke-width: 1; }
+.g-asn { font: 600 14px -apple-system, BlinkMacSystemFont, "SF Pro Text", "Segoe UI", sans-serif; fill: var(--label); font-variant-numeric: tabular-nums; }
+.g-name { font: 400 11px -apple-system, BlinkMacSystemFont, "SF Pro Text", "Segoe UI", sans-serif; fill: var(--label2); }
+.g-head { font: 600 9.5px -apple-system, BlinkMacSystemFont, sans-serif; fill: var(--label2); letter-spacing: .06em; }
+.g-peer { fill: var(--green); }
+.g-origin rect { fill: var(--blue); stroke: var(--blue); }
+.g-origin .g-asn, .g-origin .g-name { fill: #fff; }
+.g-more rect { fill: transparent; stroke-dasharray: 4 3; stroke: var(--label2); }
+.g-sel rect { stroke: var(--blue); stroke-width: 2.5; fill: var(--blue-soft); }
+.g-dim { opacity: .38; }
+
+/* empty state */
+.cuv { text-align: center; padding: calc(36 * var(--u)) calc(32 * var(--u)) calc(16 * var(--u)); }
+.cuv-i { width: calc(56 * var(--u)); height: calc(56 * var(--u)); color: var(--label3); }
+.cuv h2 { font-size: calc(22 * var(--u)); margin: calc(10 * var(--u)) 0 calc(6 * var(--u)); font-weight: 700; }
+.cuv p { font-size: calc(15 * var(--u)); color: var(--label2); margin: 0 0 calc(16 * var(--u)); }
+.ex { display: flex; justify-content: center; gap: calc(8 * var(--u)); flex-wrap: wrap; }
+.ex span { font-size: calc(14 * var(--u)); color: var(--blue); background: var(--blue-soft); border-radius: 99px; padding: calc(5 * var(--u)) calc(12 * var(--u)); font-weight: 500; }
+
+/* tab bar */
+.tabbar { position: absolute; left: 0; right: 0; bottom: 0; height: calc(83 * var(--u)); background: var(--bar-bg); border-top: .5px solid var(--sep); display: flex; justify-content: space-around; padding-top: calc(7 * var(--u)); -webkit-backdrop-filter: blur(20px); backdrop-filter: blur(20px); }
+.tab { display: flex; flex-direction: column; align-items: center; gap: calc(2 * var(--u)); color: var(--gray); width: calc(100 * var(--u)); }
+.tab svg { width: calc(26 * var(--u)); height: calc(26 * var(--u)); }
+.tab b { font-size: calc(10 * var(--u)); font-weight: 500; }
+.tab.on { color: var(--blue); }
+.homebar { position: absolute; bottom: calc(8 * var(--u)); left: 50%; transform: translateX(-50%); width: calc(134 * var(--u)); height: calc(5 * var(--u)); border-radius: 9px; background: var(--label); }
+
+/* ---------- iPad ---------- */
+.ipad .ui { display: grid; grid-template-columns: calc(300 * var(--u)) 1fr calc(320 * var(--u)); grid-template-rows: calc(24 * var(--u)) 1fr; }
+.ip-sb { grid-column: 1 / -1; display: flex; justify-content: space-between; align-items: center; padding: 0 calc(22 * var(--u)); font-size: calc(13 * var(--u)); font-weight: 600; }
+.side { background: var(--scr-bg); border-right: .5px solid var(--sep); padding: 0 calc(12 * var(--u)); position: relative; }
+.ipad .screen { background: var(--scr-card); }
+.side-tb { height: calc(40 * var(--u)); display: flex; align-items: center; color: var(--blue); padding-left: calc(6 * var(--u)); }
+.side-tb svg { width: calc(24 * var(--u)); height: calc(24 * var(--u)); }
+.side h1 { font-size: calc(30 * var(--u)); margin: 0 calc(8 * var(--u)) calc(10 * var(--u)); letter-spacing: -.02em; }
+.ssec { font-size: calc(13 * var(--u)); color: var(--label2); text-transform: uppercase; letter-spacing: .03em; margin: calc(14 * var(--u)) calc(10 * var(--u)) calc(6 * var(--u)); font-weight: 600; }
+.slist { list-style: none; margin: 0; padding: 0; }
+.slist li { display: flex; align-items: center; gap: calc(12 * var(--u)); padding: calc(10 * var(--u)) calc(12 * var(--u)); border-radius: calc(10 * var(--u)); font-size: calc(17 * var(--u)); }
+.slist li svg { width: calc(22 * var(--u)); height: calc(22 * var(--u)); color: var(--blue); }
+.slist li.on { background: var(--blue); color: #fff; }
+.slist li.on svg { color: #fff; }
+.slist.rec li { font-size: calc(15 * var(--u)); padding: calc(8 * var(--u)) calc(12 * var(--u)); }
+.slist.rec li svg { color: var(--label2); width: calc(18 * var(--u)); height: calc(18 * var(--u)); }
+.slist.foot { position: absolute; bottom: calc(16 * var(--u)); left: calc(12 * var(--u)); right: calc(12 * var(--u)); }
+.det { display: flex; flex-direction: column; min-width: 0; background: var(--scr-bg); }
+.det-tb { height: calc(56 * var(--u)); display: flex; align-items: center; gap: calc(10 * var(--u)); padding: 0 calc(16 * var(--u)); }
+.det-tb > b { font-size: calc(17 * var(--u)); margin-right: calc(6 * var(--u)); }
+.det-tb .field { max-width: calc(300 * var(--u)); height: calc(36 * var(--u)); }
+.det-tb .btn { height: calc(36 * var(--u)); }
+.menu { margin-left: auto; font-size: calc(15 * var(--u)); color: var(--blue); background: var(--fill); padding: calc(6 * var(--u)) calc(12 * var(--u)); border-radius: 99px; }
+.det-hd { display: flex; flex-wrap: wrap; align-items: baseline; gap: calc(6 * var(--u)) calc(14 * var(--u)); padding: calc(4 * var(--u)) calc(20 * var(--u)) calc(10 * var(--u)); font-size: calc(15 * var(--u)); color: var(--label2); }
+.det-hd b { font-size: calc(22 * var(--u)); color: var(--label); }
+.det-hd .chips { margin: 0; }
+.det-graph { position: relative; flex: 1; margin: 0 calc(16 * var(--u)) calc(16 * var(--u)); background: var(--canvas); border: .5px solid var(--sep); border-radius: calc(14 * var(--u)); overflow: hidden; }
+.det-graph .graph { position: absolute; inset: calc(16 * var(--u)); width: calc(100% - 32 * var(--u)); height: calc(100% - 32 * var(--u)); }
+.insp { background: var(--scr-card); border-left: .5px solid var(--sep); padding: calc(20 * var(--u)) calc(20 * var(--u)); overflow: hidden; }
+.ins-k { margin: 0; font-size: calc(13 * var(--u)); color: var(--label2); text-transform: uppercase; letter-spacing: .03em; font-weight: 600; }
+.insp h2 { margin: calc(4 * var(--u)) 0 0; font-size: calc(28 * var(--u)); letter-spacing: -.02em; }
+.ins-n { margin: 0 0 calc(10 * var(--u)); color: var(--label2); font-size: calc(17 * var(--u)); }
+.ins-badges { display: flex; gap: calc(6 * var(--u)); flex-wrap: wrap; }
+.ins-badges span { font-size: calc(13 * var(--u)); background: var(--blue-soft); color: var(--blue); border-radius: 99px; padding: calc(3 * var(--u)) calc(10 * var(--u)); font-weight: 500; }
+.ins-grid { display: grid; grid-template-columns: 1fr 1fr; gap: calc(10 * var(--u)); margin: calc(16 * var(--u)) 0 calc(4 * var(--u)); }
+.ins-grid div { background: var(--scr-bg); border-radius: calc(12 * var(--u)); padding: calc(10 * var(--u)) calc(12 * var(--u)); }
+.ins-grid b { display: block; font-size: calc(24 * var(--u)); }
+.ins-grid i { font-style: normal; font-size: calc(12 * var(--u)); color: var(--label2); }
+.insp .ssec { margin-left: 0; }
+.ins-paths { list-style: none; margin: 0; padding: 0; font-family: ui-monospace, "SF Mono", Menlo, monospace; font-size: calc(14 * var(--u)); }
+.ins-paths li { padding: calc(7 * var(--u)) 0; border-bottom: .5px solid var(--sep); color: var(--label2); }
+.ins-paths b { color: var(--blue); }
+.ins-act { list-style: none; margin: calc(16 * var(--u)) 0 0; padding: 0; background: var(--scr-bg); border-radius: calc(12 * var(--u)); }
+.ins-act li { display: flex; gap: calc(10 * var(--u)); align-items: center; padding: calc(11 * var(--u)) calc(12 * var(--u)); color: var(--blue); font-size: calc(15 * var(--u)); border-bottom: .5px solid var(--sep); }
+.ins-act li:last-child { border-bottom: 0; }
+.ins-act svg { width: calc(20 * var(--u)); height: calc(20 * var(--u)); }
+
+/* ---------- icon, states, legend ---------- */
+.icons { display: flex; flex-wrap: wrap; align-items: flex-end; gap: 20px 24px; }
+.icons figure { margin: 0; text-align: center; color: var(--page-muted); font-size: 12px; }
+.icons figure svg { display: block; border-radius: 22.37%; box-shadow: 0 4px 14px rgba(0,0,0,.18); max-width: 100%; height: auto; }
+.icon-note { flex: 1 1 280px; margin: 0; color: var(--page-muted); max-width: 520px; }
+.states { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(100%, 220px), 1fr)); gap: 16px; }
+.st { background: var(--page-card); border: 1px solid var(--page-line); border-radius: 16px; padding: 16px; }
+.st b { display: block; margin: 8px 0 4px; }
+.st p { margin: 0; color: var(--page-muted); font-size: 14px; }
+.st-i { width: 28px; height: 28px; color: var(--page-muted); fill: currentColor; }
+.st-i.warn { color: var(--orange); }
+.spin { display: block; width: 26px; height: 26px; border-radius: 50%; border: 3px solid var(--page-line); border-top-color: var(--blue); animation: spin 1s linear infinite; }
+@keyframes spin { to { transform: rotate(360deg); } }
+@media (prefers-reduced-motion: reduce) { .spin { animation: none; } }
+.legend { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(100%, 340px), 1fr)); gap: 12px; }
+.lg { display: flex; gap: 14px; align-items: center; background: var(--page-card); border: 1px solid var(--page-line); border-radius: 14px; padding: 12px 14px; min-width: 0; }
+.lg p { margin: 0; font-size: 14px; color: var(--page-muted); min-width: 0; }
+.lg p b { color: var(--page-fg); }
+.lg-s { width: 120px; height: 44px; flex: none; --label: var(--page-fg); }
+.rttkey { display: flex; flex-direction: column; gap: 3px; font-size: 12px; flex: none; width: 120px; color: var(--page-muted); }
+.rttkey .dot { width: 9px; height: 9px; margin-right: 6px; vertical-align: -1px; }
+.notes { margin: 20px 0 0; padding-left: 20px; color: var(--page-muted); max-width: 900px; }
+.notes li { margin-bottom: 8px; }
+.notes b { color: var(--page-fg); }
+
+</style>
+</head>
+<body>
+
+<svg width="0" height="0" style="position:absolute" aria-hidden="true">
+ <symbol id="i-ping" viewBox="0 0 24 24"><circle cx="12" cy="12" r="2.6" fill="currentColor"/><path d="M8.3 8.3a5.3 5.3 0 0 0 0 7.4M15.7 8.3a5.3 5.3 0 0 1 0 7.4M5.3 5.3a9.5 9.5 0 0 0 0 13.4M18.7 5.3a9.5 9.5 0 0 1 0 13.4" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round"/></symbol>
+ <symbol id="i-trace" viewBox="0 0 24 24"><circle cx="5" cy="5" r="2.8" fill="currentColor"/><circle cx="19" cy="19" r="2.8" fill="currentColor"/><path d="M7.6 6.2C16 7.5 6 15.5 16.6 17.6" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-dasharray="2.2 2.6"/></symbol>
+ <symbol id="i-bgp" viewBox="0 0 24 24"><path d="M12 5L5 18.5M12 5l7 13.5M5 18.5h14" fill="none" stroke="currentColor" stroke-width="1.7" stroke-dasharray="2 2.2"/><circle cx="12" cy="4.6" r="2.8" fill="currentColor"/><circle cx="4.6" cy="18.6" r="2.8" fill="currentColor"/><circle cx="19.4" cy="18.6" r="2.8" fill="currentColor"/></symbol>
+ <symbol id="i-gear" viewBox="0 0 24 24"><path d="M12 8.6a3.4 3.4 0 1 0 0 6.8 3.4 3.4 0 0 0 0-6.8Zm8.2 4.6v-2.4l-2.3-.6a6.3 6.3 0 0 0-.7-1.6l1.2-2-1.7-1.7-2 1.2c-.5-.3-1-.5-1.6-.7L12.5 3h-2.4l-.6 2.3c-.6.2-1.1.4-1.6.7l-2-1.2-1.7 1.7 1.2 2c-.3.5-.5 1-.7 1.6l-2.3.6v2.4l2.3.6c.2.6.4 1.1.7 1.6l-1.2 2 1.7 1.7 2-1.2c.5.3 1 .5 1.6.7l.6 2.3h2.4l.6-2.3c.6-.2 1.1-.4 1.6-.7l2 1.2 1.7-1.7-1.2-2c.3-.5.5-1 .7-1.6l2.3-.6Z" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"/></symbol>
+ <symbol id="i-share" viewBox="0 0 24 24"><path d="M12 3v12M8 7l4-4 4 4M7.5 10H6a1.5 1.5 0 0 0-1.5 1.5v8A1.5 1.5 0 0 0 6 21h12a1.5 1.5 0 0 0 1.5-1.5v-8A1.5 1.5 0 0 0 18 10h-1.5" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"/></symbol>
+ <symbol id="i-globe" viewBox="0 0 24 24"><circle cx="12" cy="12" r="8.5" fill="none" stroke="currentColor" stroke-width="1.6"/><path d="M3.5 12h17M12 3.5c2.6 2.4 3.6 5.3 3.6 8.5s-1 6.1-3.6 8.5c-2.6-2.4-3.6-5.3-3.6-8.5S9.4 5.9 12 3.5Z" fill="none" stroke="currentColor" stroke-width="1.5"/></symbol>
+ <symbol id="i-xfill" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9" fill="currentColor"/><path d="M9 9l6 6M15 9l-6 6" stroke="var(--scr-card)" stroke-width="1.8" stroke-linecap="round"/></symbol>
+ <symbol id="i-check" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9.5" fill="currentColor"/><path d="M7.8 12.3l2.8 2.8 5.6-6" fill="none" stroke="#fff" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></symbol>
+ <symbol id="i-chev" viewBox="0 0 24 24"><path d="M9.5 5.5L16 12l-6.5 6.5" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/></symbol>
+ <symbol id="i-fit" viewBox="0 0 24 24"><path d="M4 9V4h5M20 9V4h-5M4 15v5h5M20 15v5h-5" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"/></symbol>
+ <symbol id="i-sidebar" viewBox="0 0 24 24"><rect x="3" y="5" width="18" height="14" rx="2.5" fill="none" stroke="currentColor" stroke-width="1.6"/><path d="M9 5v14" stroke="currentColor" stroke-width="1.6"/></symbol>
+ <symbol id="i-inspector" viewBox="0 0 24 24"><rect x="3" y="5" width="18" height="14" rx="2.5" fill="none" stroke="currentColor" stroke-width="1.6"/><path d="M15 5v14" stroke="currentColor" stroke-width="1.6"/></symbol>
+ <symbol id="i-clock" viewBox="0 0 24 24"><circle cx="12" cy="12" r="8.5" fill="none" stroke="currentColor" stroke-width="1.6"/><path d="M12 7.5V12l3 2" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></symbol>
+ <symbol id="i-wifislash" viewBox="0 0 24 24"><path d="M3.5 9.5a12 12 0 0 1 17 0M6.5 12.7a7.6 7.6 0 0 1 11 0M9.6 15.8a3.2 3.2 0 0 1 4.8 0M4 4l16 16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></symbol>
+ <symbol id="i-warn" viewBox="0 0 24 24"><path d="M12 3.8L21 19.5H3L12 3.8Z" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linejoin="round"/><path d="M12 10v4.2" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/><circle cx="12" cy="16.9" r="1.1" fill="currentColor"/></symbol>
+ <symbol id="i-lock" viewBox="0 0 24 24"><rect x="5" y="10.5" width="14" height="9.5" rx="2" fill="none" stroke="currentColor" stroke-width="1.7"/><path d="M8.5 10.5V8a3.5 3.5 0 0 1 7 0v2.5" fill="none" stroke="currentColor" stroke-width="1.7"/></symbol>
+ <symbol id="i-list" viewBox="0 0 24 24"><path d="M9 6.5h11M9 12h11M9 17.5h11" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/><circle cx="4.6" cy="6.5" r="1.3" fill="currentColor"/><circle cx="4.6" cy="12" r="1.3" fill="currentColor"/><circle cx="4.6" cy="17.5" r="1.3" fill="currentColor"/></symbol>
+ <symbol id="i-copy" viewBox="0 0 24 24"><rect x="8" y="8" width="12" height="12" rx="2" fill="none" stroke="currentColor" stroke-width="1.6"/><path d="M16 8V6a2 2 0 0 0-2-2H6a2 2 0 0 0-2 2v8a2 2 0 0 0 2 2h2" fill="none" stroke="currentColor" stroke-width="1.6"/></symbol>
+ <symbol id="i-safari" viewBox="0 0 24 24"><circle cx="12" cy="12" r="8.5" fill="none" stroke="currentColor" stroke-width="1.6"/><path d="M15.5 8.5l-2 5-5 2 2-5 5-2Z" fill="currentColor"/></symbol>
+</svg>
+<header class="top">
+ <div class="brand"><svg xmlns="http://www.w3.org/2000/svg" width="72" height="72" role="img" aria-label="IP Tools app icon" viewBox="0 0 1024 1024">
+  
+  <defs>
+    <linearGradient id="bgh" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#2F7BFF"/>
+      <stop offset="0.55" stop-color="#1747C9"/>
+      <stop offset="1" stop-color="#0A1F66"/>
+    </linearGradient>
+    <radialGradient id="glowh" cx="740" cy="300" r="560" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#7FE6FF" stop-opacity="0.50"/>
+      <stop offset="1" stop-color="#7FE6FF" stop-opacity="0"/>
+    </radialGradient>
+    <mask id="ringCuth" maskUnits="userSpaceOnUse" x="0" y="0" width="1024" height="1024">
+      <rect width="1024" height="1024" fill="#fff"/>
+      <path d="M232 792 L392 560 L600 660 L740 300" fill="none" stroke="#000" stroke-width="108"
+            stroke-linecap="round" stroke-linejoin="round"/>
+    </mask>
+  </defs>
+
+  <rect width="1024" height="1024" fill="url(#bgh)"/>
+  <rect width="1024" height="1024" fill="url(#glowh)"/>
+
+  
+  <g mask="url(#ringCuth)" fill="none" stroke="#FFFFFF" stroke-width="30">
+    <circle cx="740" cy="300" r="146" stroke-opacity="0.95"/>
+    <circle cx="740" cy="300" r="232" stroke-opacity="0.60"/>
+    <circle cx="740" cy="300" r="318" stroke-opacity="0.30"/>
+  </g>
+
+  
+  <path d="M232 792 L392 560 L600 660 L740 300" fill="none" stroke="#FFFFFF" stroke-width="44"
+        stroke-linecap="round" stroke-linejoin="round"/>
+
+  
+  <g fill="#FFFFFF">
+    <circle cx="232" cy="792" r="48"/>
+    <circle cx="392" cy="560" r="44"/>
+    <circle cx="600" cy="660" r="44"/>
+  </g>
+  <g fill="#1747C9">
+    <circle cx="232" cy="792" r="18"/>
+    <circle cx="392" cy="560" r="16"/>
+    <circle cx="600" cy="660" r="16"/>
+  </g>
+
+  
+  <circle cx="740" cy="300" r="82" fill="#FFFFFF"/>
+</svg>
+<div><h1>IP Tools: Ping &amp; Traceroute</h1><p>BGP Map, AS Path &amp; ASN Lookup</p></div></div>
+ <div class="meta"><span>iOS 17+ · iPadOS 17+</span><span>SwiftUI · no dependencies</span><span>MIT · open source</span>
+ <button id="theme" type="button" aria-label="Toggle colour theme">Theme: Auto</button></div>
+</header>
+<main class="page">
+<section>
+ <h2>iPhone</h2>
+ <p class="lead">Three tabs, one job each. A shared target bar sits at the top of every tool; results stream in live; Share exports plain text. All sample data below is realistic — the BGP graph is built from a real RIPEstat looking-glass snapshot of 1.1.1.0/24 (360 paths, 23 RIS collectors) using the exact algorithm in DESIGN.md §6.</p>
+ <div class="grid">
+ <figure class="shot"><div class="phone" role="img" aria-label="Ping · running"><div class="screen"><div class="ui"><div class="sb"><span class="sb-time">9:41</span><span class="island"></span><span class="sb-ic">
+<svg viewBox="0 0 18 12" class="sb-sig" aria-hidden="true"><rect x="0" y="8" width="3" height="4" rx="1"/><rect x="5" y="5.5" width="3" height="6.5" rx="1"/><rect x="10" y="3" width="3" height="9" rx="1"/><rect x="15" y="0" width="3" height="12" rx="1"/></svg>
+<svg viewBox="0 0 16 12" class="sb-wifi" aria-hidden="true"><path d="M8 11.5l2.3-2.6a3.3 3.3 0 0 0-4.6 0L8 11.5ZM3.6 6.6l1.4 1.5a4.3 4.3 0 0 1 6 0l1.4-1.5a6.3 6.3 0 0 0-8.8 0ZM.8 3.6l1.5 1.5a8.3 8.3 0 0 1 11.4 0l1.5-1.5a10.4 10.4 0 0 0-14.4 0Z"/></svg>
+<svg viewBox="0 0 27 13" class="sb-bat" aria-hidden="true"><rect x=".5" y=".5" width="23" height="12" rx="3.5" fill="none" stroke="currentColor" opacity=".4"/><rect x="2" y="2" width="17" height="9" rx="2"/><path d="M25 4.5v4a2 2 0 0 0 0-4Z" opacity=".4"/></svg></span></div><div class="tb"><span class="tbtn"><svg><use href="#i-share"/></svg></span><span class="tbtn"><svg><use href="#i-gear"/></svg></span></div>
+<h1 class="lt">Ping</h1>
+<div class="target"><div class="field"><svg><use href="#i-globe"/></svg><span class="val">1.1.1.1</span><svg class="clr"><use href="#i-xfill"/></svg></div><span class="btn stop">Stop</span></div>
+<p class="status"><span class="live"></span>Pinging <b>1.1.1.1</b> · one.one.one.one · 56 bytes</p>
+<div class="card stats">
+ <div><small>Min</small><b>11.8</b><i>ms</i></div><div><small>Avg</small><b>14.2</b><i>ms</i></div><div><small>Max</small><b>22.3</b><i>ms</i></div>
+ <div><small>Jitter</small><b>2.3</b><i>ms</i></div><div><small>Loss</small><b class="t-warn">5%</b><i>1 of 20</i></div><div><small>Received</small><b>19</b><i>of 20</i></div>
+</div>
+<div class="card chartcard"><div class="ch-h"><span>Round-trip time</span><span class="muted">last 20 · ms</span></div><svg class="chart" viewBox="0 0 340 118" aria-label="RTT chart"><line class="c-grid" x1="30" x2="336" y1="104.0" y2="104.0"/><text class="c-ax" x="25" y="107.0">0</text><line class="c-grid" x1="30" x2="336" y1="72.0" y2="72.0"/><text class="c-ax" x="25" y="75.0">10</text><line class="c-grid" x1="30" x2="336" y1="40.0" y2="40.0"/><text class="c-ax" x="25" y="43.0">20</text><line class="c-grid" x1="30" x2="336" y1="8.0" y2="8.0"/><text class="c-ax" x="25" y="11.0">30</text>
+<line class="c-avg" x1="30" x2="336" y1="58.6" y2="58.6"/><polyline class="c-line" points="30.0,61.8 46.1,58.9 62.2,63.0 78.3,54.1 94.4,59.5 110.5,57.9 126.6,62.7 142.7,32.6 158.8,59.2 174.9,60.8"/><polyline class="c-line" points="207.2,56.6 223.3,62.1 239.4,63.7 255.5,55.4 271.6,58.2 287.7,60.2 303.8,66.2 319.9,56.3 336.0,60.5"/><circle class="c-dot" cx="30.0" cy="61.8" r="2.2"/><circle class="c-dot" cx="46.1" cy="58.9" r="2.2"/><circle class="c-dot" cx="62.2" cy="63.0" r="2.2"/><circle class="c-dot" cx="78.3" cy="54.1" r="2.2"/><circle class="c-dot" cx="94.4" cy="59.5" r="2.2"/><circle class="c-dot" cx="110.5" cy="57.9" r="2.2"/><circle class="c-dot" cx="126.6" cy="62.7" r="2.2"/><circle class="c-dot" cx="142.7" cy="32.6" r="2.2"/><circle class="c-dot" cx="158.8" cy="59.2" r="2.2"/><circle class="c-dot" cx="174.9" cy="60.8" r="2.2"/><circle class="c-dot" cx="207.2" cy="56.6" r="2.2"/><circle class="c-dot" cx="223.3" cy="62.1" r="2.2"/><circle class="c-dot" cx="239.4" cy="63.7" r="2.2"/><circle class="c-dot" cx="255.5" cy="55.4" r="2.2"/><circle class="c-dot" cx="271.6" cy="58.2" r="2.2"/><circle class="c-dot" cx="287.7" cy="60.2" r="2.2"/><circle class="c-dot" cx="303.8" cy="66.2" r="2.2"/><circle class="c-dot" cx="319.9" cy="56.3" r="2.2"/><circle class="c-dot" cx="336.0" cy="60.5" r="2.2"/><path class="c-to" d="M188.1 95 l6 6 m0 -6 l-6 6"/>
+<text class="c-ax" x="30" y="116" text-anchor="start">#0</text><text class="c-ax" x="336" y="116" text-anchor="end">#19</text></svg></div>
+<p class="sec">Replies</p>
+<ul class="card list"><li class="row"><span class="dot good"></span><span class="seq">#19</span><span class="grow">64 bytes · ttl 58</span><span class="rtt">13.6 ms</span></li><li class="row"><span class="dot good"></span><span class="seq">#18</span><span class="grow">64 bytes · ttl 58</span><span class="rtt">14.9 ms</span></li><li class="row"><span class="dot good"></span><span class="seq">#17</span><span class="grow">64 bytes · ttl 58</span><span class="rtt">11.8 ms</span></li><li class="row"><span class="dot good"></span><span class="seq">#16</span><span class="grow">64 bytes · ttl 58</span><span class="rtt">13.7 ms</span></li><li class="row"><span class="dot good"></span><span class="seq">#15</span><span class="grow">64 bytes · ttl 58</span><span class="rtt">14.3 ms</span></li><li class="row"><span class="dot good"></span><span class="seq">#14</span><span class="grow">64 bytes · ttl 58</span><span class="rtt">15.2 ms</span></li><li class="row"><span class="dot good"></span><span class="seq">#13</span><span class="grow">64 bytes · ttl 58</span><span class="rtt">12.6 ms</span></li></ul><nav class="tabbar" aria-label="Tabs"><span class="tab on"><svg><use href="#i-ping"/></svg><b>Ping</b></span><span class="tab"><svg><use href="#i-trace"/></svg><b>Traceroute</b></span><span class="tab"><svg><use href="#i-bgp"/></svg><b>BGP Map</b></span></nav><span class="homebar"></span></div></div></div>
+<figcaption><b>Ping · running</b><span>Live stats, RTT chart (Swift Charts), newest reply first. Stop is red while running.</span></figcaption></figure>
+ <figure class="shot"><div class="phone" role="img" aria-label="Traceroute · finished"><div class="screen"><div class="ui"><div class="sb"><span class="sb-time">9:41</span><span class="island"></span><span class="sb-ic">
+<svg viewBox="0 0 18 12" class="sb-sig" aria-hidden="true"><rect x="0" y="8" width="3" height="4" rx="1"/><rect x="5" y="5.5" width="3" height="6.5" rx="1"/><rect x="10" y="3" width="3" height="9" rx="1"/><rect x="15" y="0" width="3" height="12" rx="1"/></svg>
+<svg viewBox="0 0 16 12" class="sb-wifi" aria-hidden="true"><path d="M8 11.5l2.3-2.6a3.3 3.3 0 0 0-4.6 0L8 11.5ZM3.6 6.6l1.4 1.5a4.3 4.3 0 0 1 6 0l1.4-1.5a6.3 6.3 0 0 0-8.8 0ZM.8 3.6l1.5 1.5a8.3 8.3 0 0 1 11.4 0l1.5-1.5a10.4 10.4 0 0 0-14.4 0Z"/></svg>
+<svg viewBox="0 0 27 13" class="sb-bat" aria-hidden="true"><rect x=".5" y=".5" width="23" height="12" rx="3.5" fill="none" stroke="currentColor" opacity=".4"/><rect x="2" y="2" width="17" height="9" rx="2"/><path d="M25 4.5v4a2 2 0 0 0 0-4Z" opacity=".4"/></svg></span></div><div class="tb"><span class="tbtn"><svg><use href="#i-share"/></svg></span><span class="tbtn"><svg><use href="#i-gear"/></svg></span></div>
+<h1 class="lt">Traceroute</h1>
+<div class="target"><div class="field"><svg><use href="#i-globe"/></svg><span class="val">8.8.8.8</span><svg class="clr"><use href="#i-xfill"/></svg></div><span class="btn go">Start</span></div>
+<div class="card summary"><svg class="ok"><use href="#i-check"/></svg><div><b>Reached dns.google in 10 hops</b><small>8.8.8.8 · AS15169 Google · 12.9 ms</small></div></div>
+<div class="th"><span>Hop</span><span class="grow">Host</span><span>avg · 3 probes (ms)</span></div>
+<ul class="card list hops"><li class="hop"><span class="hn">1</span><div class="grow"><b class="mono-ish">router.lan</b><small><span class="asn priv">Private</span> 192.168.1.1</small></div><span class="hr"><b>1.8</b><small>1.8 · 2.0 · 1.7</small></span></li><li class="hop"><span class="hn">2</span><div class="grow"><b class="mono-ish">96.120.24.29</b><small><span class="asn">AS7922 Comcast</span></small></div><span class="hr"><b>9.5</b><small>9.4 · 8.9 · 10.2</small></span></li><li class="hop"><span class="hn">3</span><div class="grow"><b class="mono-ish">po-303-1209-rur02.sanjose.ca.sfba.comcast.net</b><small><span class="asn">AS7922 Comcast</span> 68.86.181.33</small></div><span class="hr"><b>10.3</b><small>10.1 · 9.8 · 11.0</small></span></li><li class="hop"><span class="hn">4</span><div class="grow"><b class="mono-ish">be-232-rar01.santaclara.ca.sfba.comcast.net</b><small><span class="asn">AS7922 Comcast</span> 162.151.79.133</small></div><span class="hr"><b>11.7</b><small>11.6 · 11.2 · 12.4</small></span></li><li class="hop"><span class="hn">5</span><div class="grow"><b class="mono-ish">be-36131-cs03.sunnyvale.ca.ibone.comcast.net</b><small><span class="asn">AS7922 Comcast</span> 96.110.41.121</small></div><span class="hr"><b>12.8</b><small>12.8 · 13.1 · 12.6</small></span></li><li class="hop"><span class="hn">6</span><div class="grow"><b class="mono-ish">be-2312-pe12.529bryant.ca.ibone.comcast.net</b><small><span class="asn">AS7922 Comcast</span> 96.110.44.6</small></div><span class="hr"><b>13.5</b><small>13.4 · 13.0 · 14.2</small></span></li><li class="hop"><span class="hn">7</span><div class="grow"><b class="muted">No reply</b><small class="muted">* &nbsp;* &nbsp;*</small></div><span class="hr muted">—</span></li><li class="hop"><span class="hn">8</span><div class="grow"><b class="mono-ish">142.251.65.111</b><small><span class="asn">AS15169 Google</span></small></div><span class="hr"><b>13.3</b><small>13.9 · 12.7 · 13.3</small></span></li><li class="hop"><span class="hn">9</span><div class="grow"><b class="mono-ish">142.251.226.233</b><small><span class="asn">AS15169 Google</span></small></div><span class="hr"><b>13.2</b><small>13.2 · 12.8 · 13.5</small></span></li><li class="hop dest"><span class="hn">10</span><div class="grow"><b class="mono-ish">dns.google</b><small><span class="asn">AS15169 Google</span> 8.8.8.8</small></div><span class="hr"><b>12.9</b><small>12.9 · 12.6 · 13.1</small></span></li></ul><nav class="tabbar" aria-label="Tabs"><span class="tab"><svg><use href="#i-ping"/></svg><b>Ping</b></span><span class="tab on"><svg><use href="#i-trace"/></svg><b>Traceroute</b></span><span class="tab"><svg><use href="#i-bgp"/></svg><b>BGP Map</b></span></nav><span class="homebar"></span></div></div></div>
+<figcaption><b>Traceroute · finished</b><span>One row per hop: reverse-DNS name, IP, ASN badge, avg + 3 probe RTTs. Silent hops show * * *.</span></figcaption></figure>
+ <figure class="shot"><div class="phone" role="img" aria-label="BGP Map · graph"><div class="screen"><div class="ui"><div class="sb"><span class="sb-time">9:41</span><span class="island"></span><span class="sb-ic">
+<svg viewBox="0 0 18 12" class="sb-sig" aria-hidden="true"><rect x="0" y="8" width="3" height="4" rx="1"/><rect x="5" y="5.5" width="3" height="6.5" rx="1"/><rect x="10" y="3" width="3" height="9" rx="1"/><rect x="15" y="0" width="3" height="12" rx="1"/></svg>
+<svg viewBox="0 0 16 12" class="sb-wifi" aria-hidden="true"><path d="M8 11.5l2.3-2.6a3.3 3.3 0 0 0-4.6 0L8 11.5ZM3.6 6.6l1.4 1.5a4.3 4.3 0 0 1 6 0l1.4-1.5a6.3 6.3 0 0 0-8.8 0ZM.8 3.6l1.5 1.5a8.3 8.3 0 0 1 11.4 0l1.5-1.5a10.4 10.4 0 0 0-14.4 0Z"/></svg>
+<svg viewBox="0 0 27 13" class="sb-bat" aria-hidden="true"><rect x=".5" y=".5" width="23" height="12" rx="3.5" fill="none" stroke="currentColor" opacity=".4"/><rect x="2" y="2" width="17" height="9" rx="2"/><path d="M25 4.5v4a2 2 0 0 0 0-4Z" opacity=".4"/></svg></span></div><div class="inl"><span></span><b>BGP Map</b><span class="tb2"><span class="tbtn"><svg><use href="#i-share"/></svg></span></span></div>
+<div class="target"><div class="field"><svg><use href="#i-bgp"/></svg><span class="val">1.1.1.1</span><svg class="clr"><use href="#i-xfill"/></svg></div><span class="btn go">Map</span></div>
+<div class="card pfx"><div class="pfx-l"><b class="mono">1.1.1.0/24</b><small>Origin <span class="asn">AS13335</span> Cloudflare, Inc.</small></div>
+<div class="chips"><span>360 paths</span><span>23 collectors</span><span>Seen by 319/319 peers</span></div></div>
+<div class="seg"><span class="on">Graph</span><span>List</span></div>
+<div class="graphwrap"><svg class="graph" viewBox="150 -12 514 440" preserveAspectRatio="xMaxYMid meet" aria-label="AS path graph"><text class="g-head" x="584" y="6" text-anchor="middle">ORIGIN</text><text class="g-head" x="416" y="6" text-anchor="middle">1 HOP</text><text class="g-head" x="248" y="6" text-anchor="middle">2 HOPS</text><text class="g-head" x="80" y="6" text-anchor="middle">3 HOPS</text><path class="g-edge" d="M136 214 C164 214 164 326 192 326" stroke-width="1.8"/>
+<path class="g-edge" d="M304 326 C332 326 332 382 360 382" stroke-width="1.8"/>
+<path class="g-edge g-lat" d="M192 214 C147 214 147 382 192 382" stroke-width="1.8"/>
+<path class="g-edge g-lat" d="M192 382 C147 382 147 46 192 46" stroke-width="1.8"/>
+<path class="g-edge" d="M304 46 C332 46 332 382 360 382" stroke-width="1.8"/>
+<path class="g-edge" d="M136 102 C164 102 164 102 192 102" stroke-width="1.8"/>
+<path class="g-edge" d="M304 102 C332 102 332 214 360 214" stroke-width="1.8"/>
+<path class="g-edge" d="M136 270 C164 270 164 382 192 382" stroke-width="1.8"/>
+<path class="g-edge" d="M136 326 C164 326 164 382 192 382" stroke-width="1.8"/>
+<path class="g-edge" d="M304 382 C332 382 332 214 360 214" stroke-width="1.9"/>
+<path class="g-edge" d="M136 158 C164 158 164 158 192 158" stroke-width="1.9"/>
+<path class="g-edge" d="M304 158 C332 158 332 382 360 382" stroke-width="1.9"/>
+<path class="g-edge" d="M304 214 C332 214 332 382 360 382" stroke-width="1.9"/>
+<path class="g-edge" d="M304 270 C332 270 332 382 360 382" stroke-width="1.9"/>
+<path class="g-edge" d="M304 382 C332 382 332 326 360 326" stroke-width="2.0"/>
+<path class="g-edge" d="M472 326 C500 326 500 214 528 214" stroke-width="2.0"/>
+<path class="g-edge" d="M472 214 C500 214 500 214 528 214" stroke-width="2.1"/>
+<path class="g-edge" d="M472 270 C500 270 500 214 528 214" stroke-width="2.3"/>
+<path class="g-edge" d="M472 158 C500 158 500 214 528 214" stroke-width="2.4"/>
+<path class="g-edge" d="M472 46 C500 46 500 214 528 214" stroke-width="2.5"/>
+<path class="g-edge" d="M304 382 C332 382 332 382 360 382" stroke-width="3.4"/>
+<path class="g-edge" d="M472 382 C500 382 500 214 528 214" stroke-width="7.2"/>
+<path class="g-edge g-hl" d="M136 382 C164 382 164 46 192 46" stroke-width="1.8"/>
+<path class="g-edge g-hl" d="M136 46 C164 46 164 46 192 46" stroke-width="1.8"/>
+<path class="g-edge g-hl" d="M304 46 C332 46 332 102 360 102" stroke-width="1.9"/>
+<path class="g-edge g-hl" d="M304 382 C332 382 332 102 360 102" stroke-width="1.9"/>
+<path class="g-edge g-hl" d="M472 102 C500 102 500 214 528 214" stroke-width="2.1"/>
+<g class="g-node g-origin" transform="translate(528 192)"><rect width="112" height="44" rx="10"/><text class="g-asn" x="10" y="19">AS13335</text><text class="g-name" x="10" y="35">Cloudflare</text></g>
+<g class="g-node g-dim" transform="translate(360 24)"><rect width="112" height="44" rx="10"/><text class="g-asn" x="10" y="19">AS24482</text><text class="g-name" x="10" y="35">SG.GS</text><circle class="g-peer" cx="102" cy="12" r="3.5"/></g>
+<g class="g-node g-sel" transform="translate(360 80)"><rect width="112" height="44" rx="10"/><text class="g-asn" x="10" y="19">AS3356</text><text class="g-name" x="10" y="35">Level 3 Parent</text></g>
+<g class="g-node g-dim" transform="translate(360 136)"><rect width="112" height="44" rx="10"/><text class="g-asn" x="10" y="19">AS199524</text><text class="g-name" x="10" y="35">G-Core Labs</text><circle class="g-peer" cx="102" cy="12" r="3.5"/></g>
+<g class="g-node g-dim" transform="translate(360 192)"><rect width="112" height="44" rx="10"/><text class="g-asn" x="10" y="19">AS3257</text><text class="g-name" x="10" y="35">GTT Communications</text><circle class="g-peer" cx="102" cy="12" r="3.5"/></g>
+<g class="g-node g-dim" transform="translate(360 248)"><rect width="112" height="44" rx="10"/><text class="g-asn" x="10" y="19">AS8218</text><text class="g-name" x="10" y="35">Zayo Infrastructure…</text><circle class="g-peer" cx="102" cy="12" r="3.5"/></g>
+<g class="g-node g-dim" transform="translate(360 304)"><rect width="112" height="44" rx="10"/><text class="g-asn" x="10" y="19">AS174</text><text class="g-name" x="10" y="35">Cogent Communica…</text></g>
+<g class="g-node g-more" transform="translate(360 360)"><rect width="112" height="44" rx="10"/><text class="g-asn" x="10" y="19">+234 more</text><text class="g-name" x="10" y="35">328 paths</text></g>
+<g class="g-node" transform="translate(192 24)"><rect width="112" height="44" rx="10"/><text class="g-asn" x="10" y="19">AS6939</text><text class="g-name" x="10" y="35">Hurricane Electric</text></g>
+<g class="g-node g-dim" transform="translate(192 80)"><rect width="112" height="44" rx="10"/><text class="g-asn" x="10" y="19">AS12586</text><text class="g-name" x="10" y="35">GHOSTnet</text></g>
+<g class="g-node g-dim" transform="translate(192 136)"><rect width="112" height="44" rx="10"/><text class="g-asn" x="10" y="19">AS9583</text><text class="g-name" x="10" y="35">Sify</text></g>
+<g class="g-node g-dim" transform="translate(192 192)"><rect width="112" height="44" rx="10"/><text class="g-asn" x="10" y="19">AS328840</text><text class="g-name" x="10" y="35">ST DIGITAL</text><circle class="g-peer" cx="102" cy="12" r="3.5"/></g>
+<g class="g-node g-dim" transform="translate(192 248)"><rect width="112" height="44" rx="10"/><text class="g-asn" x="10" y="19">AS20612</text><text class="g-name" x="10" y="35">SwissIX Internet…</text><circle class="g-peer" cx="102" cy="12" r="3.5"/></g>
+<g class="g-node g-dim" transform="translate(192 304)"><rect width="112" height="44" rx="10"/><text class="g-asn" x="10" y="19">AS53356</text><text class="g-name" x="10" y="35">Free Range Cloud…</text></g>
+<g class="g-node g-more" transform="translate(192 360)"><rect width="112" height="44" rx="10"/><text class="g-asn" x="10" y="19">+42 more</text><text class="g-name" x="10" y="35">43 paths</text></g>
+<g class="g-node" transform="translate(24 24)"><rect width="112" height="44" rx="10"/><text class="g-asn" x="10" y="19">AS924</text><text class="g-name" x="10" y="35">Cloudie Networks</text><circle class="g-peer" cx="102" cy="12" r="3.5"/></g>
+<g class="g-node g-dim" transform="translate(24 80)"><rect width="112" height="44" rx="10"/><text class="g-asn" x="10" y="19">AS57821</text><text class="g-name" x="10" y="35">Nonattached Netw…</text><circle class="g-peer" cx="102" cy="12" r="3.5"/></g>
+<g class="g-node g-dim" transform="translate(24 136)"><rect width="112" height="44" rx="10"/><text class="g-asn" x="10" y="19">AS142289</text><text class="g-name" x="10" y="35">Roxonic Systems</text><circle class="g-peer" cx="102" cy="12" r="3.5"/></g>
+<g class="g-node g-dim" transform="translate(24 192)"><rect width="112" height="44" rx="10"/><text class="g-asn" x="10" y="19">AS49134</text><text class="g-name" x="10" y="35">10VPN Research…</text><circle class="g-peer" cx="102" cy="12" r="3.5"/></g>
+<g class="g-node g-dim" transform="translate(24 248)"><rect width="112" height="44" rx="10"/><text class="g-asn" x="10" y="19">AS37989</text><text class="g-name" x="10" y="35">DCS1</text><circle class="g-peer" cx="102" cy="12" r="3.5"/></g>
+<g class="g-node g-dim" transform="translate(24 304)"><rect width="112" height="44" rx="10"/><text class="g-asn" x="10" y="19">AS53046</text><text class="g-name" x="10" y="35">Universidade Est…</text><circle class="g-peer" cx="102" cy="12" r="3.5"/></g>
+<g class="g-node g-more" transform="translate(24 360)"><rect width="112" height="44" rx="10"/><text class="g-asn" x="10" y="19">+1 more</text><text class="g-name" x="10" y="35">1 paths</text></g></svg>
+<span class="zoom"><svg><use href="#i-fit"/></svg></span></div>
+<div class="selcard"><div><b>AS3356 · Level 3 Parent, LLC</b><small>Transit · 4 paths (1.1%) · 1 hop from origin</small></div><span class="lnk">Details<svg><use href="#i-chev"/></svg></span></div>
+<nav class="tabbar" aria-label="Tabs"><span class="tab"><svg><use href="#i-ping"/></svg><b>Ping</b></span><span class="tab"><svg><use href="#i-trace"/></svg><b>Traceroute</b></span><span class="tab on"><svg><use href="#i-bgp"/></svg><b>BGP Map</b></span></nav><span class="homebar"></span></div></div></div>
+<figcaption><b>BGP Map · graph</b><span>Layered AS graph, origin on the right; opens at 0.7× anchored on the origin. Pinch/drag to explore; tap a node to highlight its paths.</span></figcaption></figure>
+ <figure class="shot"><div class="phone" role="img" aria-label="BGP Map · list"><div class="screen"><div class="ui"><div class="sb"><span class="sb-time">9:41</span><span class="island"></span><span class="sb-ic">
+<svg viewBox="0 0 18 12" class="sb-sig" aria-hidden="true"><rect x="0" y="8" width="3" height="4" rx="1"/><rect x="5" y="5.5" width="3" height="6.5" rx="1"/><rect x="10" y="3" width="3" height="9" rx="1"/><rect x="15" y="0" width="3" height="12" rx="1"/></svg>
+<svg viewBox="0 0 16 12" class="sb-wifi" aria-hidden="true"><path d="M8 11.5l2.3-2.6a3.3 3.3 0 0 0-4.6 0L8 11.5ZM3.6 6.6l1.4 1.5a4.3 4.3 0 0 1 6 0l1.4-1.5a6.3 6.3 0 0 0-8.8 0ZM.8 3.6l1.5 1.5a8.3 8.3 0 0 1 11.4 0l1.5-1.5a10.4 10.4 0 0 0-14.4 0Z"/></svg>
+<svg viewBox="0 0 27 13" class="sb-bat" aria-hidden="true"><rect x=".5" y=".5" width="23" height="12" rx="3.5" fill="none" stroke="currentColor" opacity=".4"/><rect x="2" y="2" width="17" height="9" rx="2"/><path d="M25 4.5v4a2 2 0 0 0 0-4Z" opacity=".4"/></svg></span></div><div class="inl"><span></span><b>BGP Map</b><span class="tb2"><span class="tbtn"><svg><use href="#i-share"/></svg></span></span></div>
+<div class="target"><div class="field"><svg><use href="#i-bgp"/></svg><span class="val">1.1.1.1</span><svg class="clr"><use href="#i-xfill"/></svg></div><span class="btn go">Map</span></div>
+<div class="seg"><span>Graph</span><span class="on">List</span></div>
+<p class="sec">Origin</p>
+<ul class="card list"><li class="row as"><div class="grow"><b>AS13335</b><small>Cloudflare, Inc.</small></div><span class="bar"><i style="width:100%"></i></span><span class="rtt">360</span></li></ul>
+<p class="sec">1 hop from origin · 240 ASes</p>
+<ul class="card list">
+<li class="row as"><div class="grow"><b>AS24482</b><small>SG.GS · RIS peer</small></div><span class="bar"><i style="width:28%"></i></span><span class="rtt">10</span></li>
+<li class="row as"><div class="grow"><b>AS3356</b><small>Level 3 Parent · transit</small></div><span class="bar"><i style="width:20%"></i></span><span class="rtt">4</span></li>
+<li class="row as"><div class="grow"><b>AS199524</b><small>G-Core Labs · RIS peer</small></div><span class="bar"><i style="width:24%"></i></span><span class="rtt">8</span></li>
+<li class="row as"><div class="grow"><b>AS3257</b><small>GTT Communications · transit</small></div><span class="bar"><i style="width:19%"></i></span><span class="rtt">4</span></li>
+<li class="row more"><span class="grow lnk">Show all 240</span><svg class="chev"><use href="#i-chev"/></svg></li></ul>
+<p class="sec">2 hops from origin · 48 ASes</p>
+<ul class="card list">
+<li class="row as"><div class="grow"><b>AS6939</b><small>Hurricane Electric · transit</small></div><span class="bar"><i style="width:16%"></i></span><span class="rtt">3</span></li>
+<li class="row more"><span class="grow lnk">Show all 48</span><svg class="chev"><use href="#i-chev"/></svg></li></ul>
+<p class="sec">AS paths · 268 unique</p>
+<ul class="card list"><li class="row"><span class="grow mono sm">924 6939 3356 13335</span><span class="muted sm">RRC25</span></li></ul>
+<nav class="tabbar" aria-label="Tabs"><span class="tab"><svg><use href="#i-ping"/></svg><b>Ping</b></span><span class="tab"><svg><use href="#i-trace"/></svg><b>Traceroute</b></span><span class="tab on"><svg><use href="#i-bgp"/></svg><b>BGP Map</b></span></nav><span class="homebar"></span></div></div></div>
+<figcaption><b>BGP Map · list</b><span>The same data as an accessible list — default when VoiceOver is on. Grouped by distance from origin.</span></figcaption></figure>
+ <figure class="shot"><div class="phone" role="img" aria-label="Empty state"><div class="screen"><div class="ui"><div class="sb"><span class="sb-time">9:41</span><span class="island"></span><span class="sb-ic">
+<svg viewBox="0 0 18 12" class="sb-sig" aria-hidden="true"><rect x="0" y="8" width="3" height="4" rx="1"/><rect x="5" y="5.5" width="3" height="6.5" rx="1"/><rect x="10" y="3" width="3" height="9" rx="1"/><rect x="15" y="0" width="3" height="12" rx="1"/></svg>
+<svg viewBox="0 0 16 12" class="sb-wifi" aria-hidden="true"><path d="M8 11.5l2.3-2.6a3.3 3.3 0 0 0-4.6 0L8 11.5ZM3.6 6.6l1.4 1.5a4.3 4.3 0 0 1 6 0l1.4-1.5a6.3 6.3 0 0 0-8.8 0ZM.8 3.6l1.5 1.5a8.3 8.3 0 0 1 11.4 0l1.5-1.5a10.4 10.4 0 0 0-14.4 0Z"/></svg>
+<svg viewBox="0 0 27 13" class="sb-bat" aria-hidden="true"><rect x=".5" y=".5" width="23" height="12" rx="3.5" fill="none" stroke="currentColor" opacity=".4"/><rect x="2" y="2" width="17" height="9" rx="2"/><path d="M25 4.5v4a2 2 0 0 0 0-4Z" opacity=".4"/></svg></span></div><div class="tb"><span class="tbtn"><svg><use href="#i-share"/></svg></span></div>
+<h1 class="lt">BGP Map</h1>
+<div class="target"><div class="field"><svg><use href="#i-bgp"/></svg><span class="val ph">IP, prefix, ASN or hostname</span></div><span class="btn go dis">Map</span></div>
+<div class="cuv"><svg class="cuv-i"><use href="#i-bgp"/></svg><h2>Map BGP Paths</h2>
+<p>See how networks around the world reach an IP address, prefix or AS — live routes from RIPE RIS collectors.</p>
+<div class="ex"><span>1.1.1.1</span><span>8.8.8.0/24</span><span>AS13335</span></div></div>
+<p class="sec">Recent</p>
+<ul class="card list">
+<li class="row"><svg class="ric"><use href="#i-clock"/></svg><span class="grow">1.1.1.1</span><span class="muted sm">Ping · 2 min</span></li>
+<li class="row"><svg class="ric"><use href="#i-clock"/></svg><span class="grow">8.8.8.8</span><span class="muted sm">Traceroute · 1 h</span></li>
+<li class="row"><svg class="ric"><use href="#i-clock"/></svg><span class="grow">2606:4700:4700::1111</span><span class="muted sm">Ping · Yesterday</span></li>
+</ul><nav class="tabbar" aria-label="Tabs"><span class="tab"><svg><use href="#i-ping"/></svg><b>Ping</b></span><span class="tab"><svg><use href="#i-trace"/></svg><b>Traceroute</b></span><span class="tab on"><svg><use href="#i-bgp"/></svg><b>BGP Map</b></span></nav><span class="homebar"></span></div></div></div>
+<figcaption><b>Empty state</b><span>ContentUnavailableView with tappable examples, plus shared recent targets from all tools.</span></figcaption></figure>
+ </div>
+</section>
+<section>
+ <h2>iPad</h2>
+ <figure class="shot wide"><div class="ipad" role="img" aria-label="iPad split view with BGP map and AS inspector"><div class="screen"><div class="ui">
+<div class="ip-sb"><span>9:41&nbsp; Sat 7 Nov</span><span class="sb-ic"><svg viewBox="0 0 16 12" class="sb-wifi" aria-hidden="true"><path d="M8 11.5l2.3-2.6a3.3 3.3 0 0 0-4.6 0L8 11.5ZM3.6 6.6l1.4 1.5a4.3 4.3 0 0 1 6 0l1.4-1.5a6.3 6.3 0 0 0-8.8 0ZM.8 3.6l1.5 1.5a8.3 8.3 0 0 1 11.4 0l1.5-1.5a10.4 10.4 0 0 0-14.4 0Z"/></svg> 100%</span></div>
+<aside class="side"><div class="side-tb"><svg><use href="#i-sidebar"/></svg></div><h1>IP Tools</h1>
+<p class="ssec">Tools</p>
+<ul class="slist"><li><svg><use href="#i-ping"/></svg>Ping</li><li><svg><use href="#i-trace"/></svg>Traceroute</li><li class="on"><svg><use href="#i-bgp"/></svg>BGP Map</li></ul>
+<p class="ssec">Recent</p>
+<ul class="slist rec"><li><svg><use href="#i-clock"/></svg>1.1.1.1</li><li><svg><use href="#i-clock"/></svg>8.8.8.8</li><li><svg><use href="#i-clock"/></svg>AS13335</li><li><svg><use href="#i-clock"/></svg>2606:4700::/32</li></ul>
+<ul class="slist foot"><li><svg><use href="#i-gear"/></svg>Settings</li></ul>
+</aside>
+<main class="det">
+<div class="det-tb"><b>BGP Map</b><div class="field"><svg><use href="#i-bgp"/></svg><span class="val">1.1.1.1</span><svg class="clr"><use href="#i-xfill"/></svg></div><span class="btn go">Map</span>
+<span class="menu">Top 6 ▾</span><span class="tbtn"><svg><use href="#i-list"/></svg></span><span class="tbtn"><svg><use href="#i-share"/></svg></span><span class="tbtn on"><svg><use href="#i-inspector"/></svg></span></div>
+<div class="det-hd"><b class="mono">1.1.1.0/24</b><span>Origin <span class="asn">AS13335</span> Cloudflare, Inc.</span><span class="chips"><span>360 paths</span><span>23 collectors</span><span>Seen by 319/319 peers</span><span>Updated 12:32 UTC</span></span></div>
+<div class="det-graph"><svg class="graph" viewBox="0 -12 664 440" preserveAspectRatio="xMaxYMid meet" aria-label="AS path graph"><text class="g-head" x="584" y="6" text-anchor="middle">ORIGIN</text><text class="g-head" x="416" y="6" text-anchor="middle">1 HOP</text><text class="g-head" x="248" y="6" text-anchor="middle">2 HOPS</text><text class="g-head" x="80" y="6" text-anchor="middle">3 HOPS</text><path class="g-edge" d="M136 214 C164 214 164 326 192 326" stroke-width="1.8"/>
+<path class="g-edge" d="M304 326 C332 326 332 382 360 382" stroke-width="1.8"/>
+<path class="g-edge g-lat" d="M192 214 C147 214 147 382 192 382" stroke-width="1.8"/>
+<path class="g-edge g-lat" d="M192 382 C147 382 147 46 192 46" stroke-width="1.8"/>
+<path class="g-edge" d="M304 46 C332 46 332 382 360 382" stroke-width="1.8"/>
+<path class="g-edge" d="M136 102 C164 102 164 102 192 102" stroke-width="1.8"/>
+<path class="g-edge" d="M304 102 C332 102 332 214 360 214" stroke-width="1.8"/>
+<path class="g-edge" d="M136 270 C164 270 164 382 192 382" stroke-width="1.8"/>
+<path class="g-edge" d="M136 326 C164 326 164 382 192 382" stroke-width="1.8"/>
+<path class="g-edge" d="M304 382 C332 382 332 214 360 214" stroke-width="1.9"/>
+<path class="g-edge" d="M136 158 C164 158 164 158 192 158" stroke-width="1.9"/>
+<path class="g-edge" d="M304 158 C332 158 332 382 360 382" stroke-width="1.9"/>
+<path class="g-edge" d="M304 214 C332 214 332 382 360 382" stroke-width="1.9"/>
+<path class="g-edge" d="M304 270 C332 270 332 382 360 382" stroke-width="1.9"/>
+<path class="g-edge" d="M304 382 C332 382 332 326 360 326" stroke-width="2.0"/>
+<path class="g-edge" d="M472 326 C500 326 500 214 528 214" stroke-width="2.0"/>
+<path class="g-edge" d="M472 214 C500 214 500 214 528 214" stroke-width="2.1"/>
+<path class="g-edge" d="M472 270 C500 270 500 214 528 214" stroke-width="2.3"/>
+<path class="g-edge" d="M472 158 C500 158 500 214 528 214" stroke-width="2.4"/>
+<path class="g-edge" d="M472 46 C500 46 500 214 528 214" stroke-width="2.5"/>
+<path class="g-edge" d="M304 382 C332 382 332 382 360 382" stroke-width="3.4"/>
+<path class="g-edge" d="M472 382 C500 382 500 214 528 214" stroke-width="7.2"/>
+<path class="g-edge g-hl" d="M136 382 C164 382 164 46 192 46" stroke-width="1.8"/>
+<path class="g-edge g-hl" d="M136 46 C164 46 164 46 192 46" stroke-width="1.8"/>
+<path class="g-edge g-hl" d="M304 46 C332 46 332 102 360 102" stroke-width="1.9"/>
+<path class="g-edge g-hl" d="M304 382 C332 382 332 102 360 102" stroke-width="1.9"/>
+<path class="g-edge g-hl" d="M472 102 C500 102 500 214 528 214" stroke-width="2.1"/>
+<g class="g-node g-origin" transform="translate(528 192)"><rect width="112" height="44" rx="10"/><text class="g-asn" x="10" y="19">AS13335</text><text class="g-name" x="10" y="35">Cloudflare</text></g>
+<g class="g-node g-dim" transform="translate(360 24)"><rect width="112" height="44" rx="10"/><text class="g-asn" x="10" y="19">AS24482</text><text class="g-name" x="10" y="35">SG.GS</text><circle class="g-peer" cx="102" cy="12" r="3.5"/></g>
+<g class="g-node g-sel" transform="translate(360 80)"><rect width="112" height="44" rx="10"/><text class="g-asn" x="10" y="19">AS3356</text><text class="g-name" x="10" y="35">Level 3 Parent</text></g>
+<g class="g-node g-dim" transform="translate(360 136)"><rect width="112" height="44" rx="10"/><text class="g-asn" x="10" y="19">AS199524</text><text class="g-name" x="10" y="35">G-Core Labs</text><circle class="g-peer" cx="102" cy="12" r="3.5"/></g>
+<g class="g-node g-dim" transform="translate(360 192)"><rect width="112" height="44" rx="10"/><text class="g-asn" x="10" y="19">AS3257</text><text class="g-name" x="10" y="35">GTT Communications</text><circle class="g-peer" cx="102" cy="12" r="3.5"/></g>
+<g class="g-node g-dim" transform="translate(360 248)"><rect width="112" height="44" rx="10"/><text class="g-asn" x="10" y="19">AS8218</text><text class="g-name" x="10" y="35">Zayo Infrastructure…</text><circle class="g-peer" cx="102" cy="12" r="3.5"/></g>
+<g class="g-node g-dim" transform="translate(360 304)"><rect width="112" height="44" rx="10"/><text class="g-asn" x="10" y="19">AS174</text><text class="g-name" x="10" y="35">Cogent Communica…</text></g>
+<g class="g-node g-more" transform="translate(360 360)"><rect width="112" height="44" rx="10"/><text class="g-asn" x="10" y="19">+234 more</text><text class="g-name" x="10" y="35">328 paths</text></g>
+<g class="g-node" transform="translate(192 24)"><rect width="112" height="44" rx="10"/><text class="g-asn" x="10" y="19">AS6939</text><text class="g-name" x="10" y="35">Hurricane Electric</text></g>
+<g class="g-node g-dim" transform="translate(192 80)"><rect width="112" height="44" rx="10"/><text class="g-asn" x="10" y="19">AS12586</text><text class="g-name" x="10" y="35">GHOSTnet</text></g>
+<g class="g-node g-dim" transform="translate(192 136)"><rect width="112" height="44" rx="10"/><text class="g-asn" x="10" y="19">AS9583</text><text class="g-name" x="10" y="35">Sify</text></g>
+<g class="g-node g-dim" transform="translate(192 192)"><rect width="112" height="44" rx="10"/><text class="g-asn" x="10" y="19">AS328840</text><text class="g-name" x="10" y="35">ST DIGITAL</text><circle class="g-peer" cx="102" cy="12" r="3.5"/></g>
+<g class="g-node g-dim" transform="translate(192 248)"><rect width="112" height="44" rx="10"/><text class="g-asn" x="10" y="19">AS20612</text><text class="g-name" x="10" y="35">SwissIX Internet…</text><circle class="g-peer" cx="102" cy="12" r="3.5"/></g>
+<g class="g-node g-dim" transform="translate(192 304)"><rect width="112" height="44" rx="10"/><text class="g-asn" x="10" y="19">AS53356</text><text class="g-name" x="10" y="35">Free Range Cloud…</text></g>
+<g class="g-node g-more" transform="translate(192 360)"><rect width="112" height="44" rx="10"/><text class="g-asn" x="10" y="19">+42 more</text><text class="g-name" x="10" y="35">43 paths</text></g>
+<g class="g-node" transform="translate(24 24)"><rect width="112" height="44" rx="10"/><text class="g-asn" x="10" y="19">AS924</text><text class="g-name" x="10" y="35">Cloudie Networks</text><circle class="g-peer" cx="102" cy="12" r="3.5"/></g>
+<g class="g-node g-dim" transform="translate(24 80)"><rect width="112" height="44" rx="10"/><text class="g-asn" x="10" y="19">AS57821</text><text class="g-name" x="10" y="35">Nonattached Netw…</text><circle class="g-peer" cx="102" cy="12" r="3.5"/></g>
+<g class="g-node g-dim" transform="translate(24 136)"><rect width="112" height="44" rx="10"/><text class="g-asn" x="10" y="19">AS142289</text><text class="g-name" x="10" y="35">Roxonic Systems</text><circle class="g-peer" cx="102" cy="12" r="3.5"/></g>
+<g class="g-node g-dim" transform="translate(24 192)"><rect width="112" height="44" rx="10"/><text class="g-asn" x="10" y="19">AS49134</text><text class="g-name" x="10" y="35">10VPN Research…</text><circle class="g-peer" cx="102" cy="12" r="3.5"/></g>
+<g class="g-node g-dim" transform="translate(24 248)"><rect width="112" height="44" rx="10"/><text class="g-asn" x="10" y="19">AS37989</text><text class="g-name" x="10" y="35">DCS1</text><circle class="g-peer" cx="102" cy="12" r="3.5"/></g>
+<g class="g-node g-dim" transform="translate(24 304)"><rect width="112" height="44" rx="10"/><text class="g-asn" x="10" y="19">AS53046</text><text class="g-name" x="10" y="35">Universidade Est…</text><circle class="g-peer" cx="102" cy="12" r="3.5"/></g>
+<g class="g-node g-more" transform="translate(24 360)"><rect width="112" height="44" rx="10"/><text class="g-asn" x="10" y="19">+1 more</text><text class="g-name" x="10" y="35">1 paths</text></g></svg><span class="zoom"><svg><use href="#i-fit"/></svg></span></div>
+</main>
+<aside class="insp"><p class="ins-k">Selected AS</p><h2>AS3356</h2><p class="ins-n">Level 3 Parent, LLC</p>
+<div class="ins-badges"><span>Transit</span><span>1 hop from origin</span></div>
+<div class="ins-grid"><div><small>Paths through</small><b>4</b><i>1.1% of 360</i></div><div><small>Collectors</small><b>2</b><i>RRC00, RRC25</i></div></div>
+<p class="ssec">Paths through AS3356</p>
+<ul class="ins-paths"><li>924 6939 <b>3356</b> 13335</li><li>61218 6939 <b>3356</b> 13335</li><li>3549 <b>3356</b> 13335</li><li>13781 <b>3356</b> 13335</li></ul>
+<ul class="ins-act"><li><svg><use href="#i-bgp"/></svg>Map prefixes of AS3356</li><li><svg><use href="#i-copy"/></svg>Copy ASN</li><li><svg><use href="#i-safari"/></svg>Open in RIPEstat</li></ul>
+</aside>
+</div></div></div>
+<figcaption><b>iPad · BGP Map in split view</b><span>Sidebar (tools + recents) · graph fits fully at regular width · tapping a node highlights every path through it and opens the inspector.</span></figcaption></figure>
+</section>
+<section>
+ <h2>App icon</h2>
+ <div class="icons">
+  <figure><svg xmlns="http://www.w3.org/2000/svg" width="180" height="180" role="img" aria-label="IP Tools app icon" viewBox="0 0 1024 1024">
+  
+  <defs>
+    <linearGradient id="bga" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#2F7BFF"/>
+      <stop offset="0.55" stop-color="#1747C9"/>
+      <stop offset="1" stop-color="#0A1F66"/>
+    </linearGradient>
+    <radialGradient id="glowa" cx="740" cy="300" r="560" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#7FE6FF" stop-opacity="0.50"/>
+      <stop offset="1" stop-color="#7FE6FF" stop-opacity="0"/>
+    </radialGradient>
+    <mask id="ringCuta" maskUnits="userSpaceOnUse" x="0" y="0" width="1024" height="1024">
+      <rect width="1024" height="1024" fill="#fff"/>
+      <path d="M232 792 L392 560 L600 660 L740 300" fill="none" stroke="#000" stroke-width="108"
+            stroke-linecap="round" stroke-linejoin="round"/>
+    </mask>
+  </defs>
+
+  <rect width="1024" height="1024" fill="url(#bga)"/>
+  <rect width="1024" height="1024" fill="url(#glowa)"/>
+
+  
+  <g mask="url(#ringCuta)" fill="none" stroke="#FFFFFF" stroke-width="30">
+    <circle cx="740" cy="300" r="146" stroke-opacity="0.95"/>
+    <circle cx="740" cy="300" r="232" stroke-opacity="0.60"/>
+    <circle cx="740" cy="300" r="318" stroke-opacity="0.30"/>
+  </g>
+
+  
+  <path d="M232 792 L392 560 L600 660 L740 300" fill="none" stroke="#FFFFFF" stroke-width="44"
+        stroke-linecap="round" stroke-linejoin="round"/>
+
+  
+  <g fill="#FFFFFF">
+    <circle cx="232" cy="792" r="48"/>
+    <circle cx="392" cy="560" r="44"/>
+    <circle cx="600" cy="660" r="44"/>
+  </g>
+  <g fill="#1747C9">
+    <circle cx="232" cy="792" r="18"/>
+    <circle cx="392" cy="560" r="16"/>
+    <circle cx="600" cy="660" r="16"/>
+  </g>
+
+  
+  <circle cx="740" cy="300" r="82" fill="#FFFFFF"/>
+</svg>
+<figcaption>180 pt</figcaption></figure>
+  <figure><svg xmlns="http://www.w3.org/2000/svg" width="120" height="120" role="img" aria-label="IP Tools app icon" viewBox="0 0 1024 1024">
+  
+  <defs>
+    <linearGradient id="bgb" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#2F7BFF"/>
+      <stop offset="0.55" stop-color="#1747C9"/>
+      <stop offset="1" stop-color="#0A1F66"/>
+    </linearGradient>
+    <radialGradient id="glowb" cx="740" cy="300" r="560" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#7FE6FF" stop-opacity="0.50"/>
+      <stop offset="1" stop-color="#7FE6FF" stop-opacity="0"/>
+    </radialGradient>
+    <mask id="ringCutb" maskUnits="userSpaceOnUse" x="0" y="0" width="1024" height="1024">
+      <rect width="1024" height="1024" fill="#fff"/>
+      <path d="M232 792 L392 560 L600 660 L740 300" fill="none" stroke="#000" stroke-width="108"
+            stroke-linecap="round" stroke-linejoin="round"/>
+    </mask>
+  </defs>
+
+  <rect width="1024" height="1024" fill="url(#bgb)"/>
+  <rect width="1024" height="1024" fill="url(#glowb)"/>
+
+  
+  <g mask="url(#ringCutb)" fill="none" stroke="#FFFFFF" stroke-width="30">
+    <circle cx="740" cy="300" r="146" stroke-opacity="0.95"/>
+    <circle cx="740" cy="300" r="232" stroke-opacity="0.60"/>
+    <circle cx="740" cy="300" r="318" stroke-opacity="0.30"/>
+  </g>
+
+  
+  <path d="M232 792 L392 560 L600 660 L740 300" fill="none" stroke="#FFFFFF" stroke-width="44"
+        stroke-linecap="round" stroke-linejoin="round"/>
+
+  
+  <g fill="#FFFFFF">
+    <circle cx="232" cy="792" r="48"/>
+    <circle cx="392" cy="560" r="44"/>
+    <circle cx="600" cy="660" r="44"/>
+  </g>
+  <g fill="#1747C9">
+    <circle cx="232" cy="792" r="18"/>
+    <circle cx="392" cy="560" r="16"/>
+    <circle cx="600" cy="660" r="16"/>
+  </g>
+
+  
+  <circle cx="740" cy="300" r="82" fill="#FFFFFF"/>
+</svg>
+<figcaption>120</figcaption></figure>
+  <figure><svg xmlns="http://www.w3.org/2000/svg" width="80" height="80" role="img" aria-label="IP Tools app icon" viewBox="0 0 1024 1024">
+  
+  <defs>
+    <linearGradient id="bgc" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#2F7BFF"/>
+      <stop offset="0.55" stop-color="#1747C9"/>
+      <stop offset="1" stop-color="#0A1F66"/>
+    </linearGradient>
+    <radialGradient id="glowc" cx="740" cy="300" r="560" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#7FE6FF" stop-opacity="0.50"/>
+      <stop offset="1" stop-color="#7FE6FF" stop-opacity="0"/>
+    </radialGradient>
+    <mask id="ringCutc" maskUnits="userSpaceOnUse" x="0" y="0" width="1024" height="1024">
+      <rect width="1024" height="1024" fill="#fff"/>
+      <path d="M232 792 L392 560 L600 660 L740 300" fill="none" stroke="#000" stroke-width="108"
+            stroke-linecap="round" stroke-linejoin="round"/>
+    </mask>
+  </defs>
+
+  <rect width="1024" height="1024" fill="url(#bgc)"/>
+  <rect width="1024" height="1024" fill="url(#glowc)"/>
+
+  
+  <g mask="url(#ringCutc)" fill="none" stroke="#FFFFFF" stroke-width="30">
+    <circle cx="740" cy="300" r="146" stroke-opacity="0.95"/>
+    <circle cx="740" cy="300" r="232" stroke-opacity="0.60"/>
+    <circle cx="740" cy="300" r="318" stroke-opacity="0.30"/>
+  </g>
+
+  
+  <path d="M232 792 L392 560 L600 660 L740 300" fill="none" stroke="#FFFFFF" stroke-width="44"
+        stroke-linecap="round" stroke-linejoin="round"/>
+
+  
+  <g fill="#FFFFFF">
+    <circle cx="232" cy="792" r="48"/>
+    <circle cx="392" cy="560" r="44"/>
+    <circle cx="600" cy="660" r="44"/>
+  </g>
+  <g fill="#1747C9">
+    <circle cx="232" cy="792" r="18"/>
+    <circle cx="392" cy="560" r="16"/>
+    <circle cx="600" cy="660" r="16"/>
+  </g>
+
+  
+  <circle cx="740" cy="300" r="82" fill="#FFFFFF"/>
+</svg>
+<figcaption>80</figcaption></figure>
+  <figure><svg xmlns="http://www.w3.org/2000/svg" width="58" height="58" role="img" aria-label="IP Tools app icon" viewBox="0 0 1024 1024">
+  
+  <defs>
+    <linearGradient id="bgd" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#2F7BFF"/>
+      <stop offset="0.55" stop-color="#1747C9"/>
+      <stop offset="1" stop-color="#0A1F66"/>
+    </linearGradient>
+    <radialGradient id="glowd" cx="740" cy="300" r="560" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#7FE6FF" stop-opacity="0.50"/>
+      <stop offset="1" stop-color="#7FE6FF" stop-opacity="0"/>
+    </radialGradient>
+    <mask id="ringCutd" maskUnits="userSpaceOnUse" x="0" y="0" width="1024" height="1024">
+      <rect width="1024" height="1024" fill="#fff"/>
+      <path d="M232 792 L392 560 L600 660 L740 300" fill="none" stroke="#000" stroke-width="108"
+            stroke-linecap="round" stroke-linejoin="round"/>
+    </mask>
+  </defs>
+
+  <rect width="1024" height="1024" fill="url(#bgd)"/>
+  <rect width="1024" height="1024" fill="url(#glowd)"/>
+
+  
+  <g mask="url(#ringCutd)" fill="none" stroke="#FFFFFF" stroke-width="30">
+    <circle cx="740" cy="300" r="146" stroke-opacity="0.95"/>
+    <circle cx="740" cy="300" r="232" stroke-opacity="0.60"/>
+    <circle cx="740" cy="300" r="318" stroke-opacity="0.30"/>
+  </g>
+
+  
+  <path d="M232 792 L392 560 L600 660 L740 300" fill="none" stroke="#FFFFFF" stroke-width="44"
+        stroke-linecap="round" stroke-linejoin="round"/>
+
+  
+  <g fill="#FFFFFF">
+    <circle cx="232" cy="792" r="48"/>
+    <circle cx="392" cy="560" r="44"/>
+    <circle cx="600" cy="660" r="44"/>
+  </g>
+  <g fill="#1747C9">
+    <circle cx="232" cy="792" r="18"/>
+    <circle cx="392" cy="560" r="16"/>
+    <circle cx="600" cy="660" r="16"/>
+  </g>
+
+  
+  <circle cx="740" cy="300" r="82" fill="#FFFFFF"/>
+</svg>
+<figcaption>58</figcaption></figure>
+  <figure><svg xmlns="http://www.w3.org/2000/svg" width="40" height="40" role="img" aria-label="IP Tools app icon" viewBox="0 0 1024 1024">
+  
+  <defs>
+    <linearGradient id="bge" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#2F7BFF"/>
+      <stop offset="0.55" stop-color="#1747C9"/>
+      <stop offset="1" stop-color="#0A1F66"/>
+    </linearGradient>
+    <radialGradient id="glowe" cx="740" cy="300" r="560" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#7FE6FF" stop-opacity="0.50"/>
+      <stop offset="1" stop-color="#7FE6FF" stop-opacity="0"/>
+    </radialGradient>
+    <mask id="ringCute" maskUnits="userSpaceOnUse" x="0" y="0" width="1024" height="1024">
+      <rect width="1024" height="1024" fill="#fff"/>
+      <path d="M232 792 L392 560 L600 660 L740 300" fill="none" stroke="#000" stroke-width="108"
+            stroke-linecap="round" stroke-linejoin="round"/>
+    </mask>
+  </defs>
+
+  <rect width="1024" height="1024" fill="url(#bge)"/>
+  <rect width="1024" height="1024" fill="url(#glowe)"/>
+
+  
+  <g mask="url(#ringCute)" fill="none" stroke="#FFFFFF" stroke-width="30">
+    <circle cx="740" cy="300" r="146" stroke-opacity="0.95"/>
+    <circle cx="740" cy="300" r="232" stroke-opacity="0.60"/>
+    <circle cx="740" cy="300" r="318" stroke-opacity="0.30"/>
+  </g>
+
+  
+  <path d="M232 792 L392 560 L600 660 L740 300" fill="none" stroke="#FFFFFF" stroke-width="44"
+        stroke-linecap="round" stroke-linejoin="round"/>
+
+  
+  <g fill="#FFFFFF">
+    <circle cx="232" cy="792" r="48"/>
+    <circle cx="392" cy="560" r="44"/>
+    <circle cx="600" cy="660" r="44"/>
+  </g>
+  <g fill="#1747C9">
+    <circle cx="232" cy="792" r="18"/>
+    <circle cx="392" cy="560" r="16"/>
+    <circle cx="600" cy="660" r="16"/>
+  </g>
+
+  
+  <circle cx="740" cy="300" r="82" fill="#FFFFFF"/>
+</svg>
+<figcaption>40</figcaption></figure>
+  <p class="icon-note">A four-hop route (traceroute / AS path) ends in a destination that emits ping rings. White on a deep blue gradient, no text, full-bleed 1024×1024 (<code>docs/icon.svg</code>). The rings stay readable down to Spotlight size; the route reads as “path across a network”.</p>
+ </div>
+</section>
+<section>
+ <h2>States</h2>
+ <p class="lead">Every tool shares the same four non-happy states, rendered with <code>ContentUnavailableView</code> or an inline banner.</p>
+ <div class="states">
+<div class="st"><span class="spin" aria-hidden="true"></span><b>Loading</b><p>“Fetching routes from RIPEstat…” — skeleton header, progress spinner, Cancel.</p></div>
+<div class="st"><svg class="st-i"><use href="#i-wifislash"/></svg><b>Offline</b><p>“You’re offline.” Banner under the target bar; Start/Map disabled; recents still usable.</p></div>
+<div class="st"><svg class="st-i"><use href="#i-lock"/></svg><b>Not routed</b><p>“10.0.0.0/8 is a private range and isn’t announced in BGP.” Detected locally, no request.</p></div>
+<div class="st"><svg class="st-i warn"><use href="#i-warn"/></svg><b>Error</b><p>“Couldn’t resolve example.invalid” / “RIPEstat is busy (429)” — message + Try Again.</p></div>
+</div>
+</section>
+<section>
+ <h2>Legend &amp; notes</h2>
+ <div class="legend">
+<div class="lg"><svg viewBox="0 0 120 44" class="lg-s"><g class="g-node g-origin"><rect x="4" y="4" width="112" height="36" rx="9"/><text class="g-asn" x="14" y="20">AS13335</text><text class="g-name" x="14" y="33">Cloudflare</text></g></svg><p><b>Origin AS</b> — rightmost column, tinted fill. Several origins (MOAS) stack here with a warning chip.</p></div>
+<div class="lg"><svg viewBox="0 0 120 44" class="lg-s"><g class="g-node"><rect x="4" y="4" width="112" height="36" rx="9"/><text class="g-asn" x="14" y="20">AS24482</text><text class="g-name" x="14" y="33">SG.GS</text><circle class="g-peer" cx="106" cy="14" r="3.5"/></g></svg><p><b>AS node</b> — ASN + short holder name. Dot = this AS is itself a RIS peer (a path starts here).</p></div>
+<div class="lg"><svg viewBox="0 0 120 44" class="lg-s"><g class="g-node g-more"><rect x="4" y="4" width="112" height="36" rx="9"/><text class="g-asn" x="14" y="20">+234 more</text><text class="g-name" x="14" y="33">328 paths</text></g></svg><p><b>Collapsed bucket</b> — ASes beyond the per-column limit. Tap to list them; “Top 6 / 12 / 30” menu changes the limit.</p></div>
+<div class="lg"><svg viewBox="0 0 120 44" class="lg-s"><path class="g-edge" d="M6 12 C60 12 60 12 114 12" stroke-width="1.8"/><path class="g-edge" d="M6 30 C60 30 60 30 114 30" stroke-width="7"/></svg><p><b>Edge width</b> = 1.5 + 6·√(paths on edge ÷ all paths). Edges point toward the origin.</p></div>
+<div class="lg"><svg viewBox="0 0 120 44" class="lg-s"><path class="g-edge g-lat" d="M40 8 C10 8 10 36 40 36" stroke-width="1.8"/><path class="g-edge g-hl" d="M60 22 C85 22 85 22 114 22" stroke-width="2.4"/></svg><p><b>Dashed arc</b> = lateral edge (same column). <b>Blue</b> = paths through the selected AS; other nodes dim.</p></div>
+<div class="lg"><span class="rttkey"><i class="dot good"></i>&lt; 80 ms <i class="dot warn"></i>80–200 <i class="dot bad"></i>≥ 200 <i class="dot to"></i>timeout</span><p><b>RTT colours</b> used in ping rows, chart points and hop averages (always paired with the number, never colour alone).</p></div>
+</div>
+ <ul class="notes">
+  <li><b>Navigation:</b> compact width → <code>TabView</code> (Ping · Traceroute · BGP Map); regular width → <code>NavigationSplitView</code> with a sidebar of tools + recents, and an <code>.inspector</code> for AS details.</li>
+  <li><b>Cross-links:</b> long-press a traceroute hop → Ping this hop / Map in BGP; tap a hop’s ASN badge → BGP Map for that IP.</li>
+  <li><b>Data:</b> probes run on-device (unprivileged ICMP sockets). BGP data and hop ASNs come from the public RIPEstat Data API. No accounts, no analytics, no tracking.</li>
+  <li><b>Type &amp; colour:</b> SF Pro / SF Mono (system), system colours, Dynamic Type, Dark Mode. Numbers use monospaced digits so columns don’t jitter while updating.</li>
+ </ul>
+</section>
+</main>
+<footer class="foot">IP Tools · design v1 · github.com/ahmadrezaei/ip-tools</footer>
+<script>
+(function () {
+  var root = document.documentElement, btn = document.getElementById('theme');
+  var modes = ['auto', 'light', 'dark'], i = 0;
+  try { var s = localStorage.getItem('iptools-theme'); if (s && modes.indexOf(s) > -1) i = modes.indexOf(s); } catch (e) {}
+  function apply() {
+    var m = modes[i];
+    if (m === 'auto') root.removeAttribute('data-theme'); else root.setAttribute('data-theme', m);
+    btn.textContent = 'Theme: ' + m.charAt(0).toUpperCase() + m.slice(1);
+    try { localStorage.setItem('iptools-theme', m); } catch (e) {}
+  }
+  btn.addEventListener('click', function () { i = (i + 1) % modes.length; apply(); });
+  apply();
+})();
+</script>
+</body>
+</html>
