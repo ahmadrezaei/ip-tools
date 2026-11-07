@@ -28,3 +28,13 @@ public struct BGPResult: Sendable {
         self.names = names
     }
 }
+
+extension BGPResult {
+    /// Origin ASNs, from the graph when it has them, otherwise from the origin lookup.
+    var originASNs: [UInt32] { graph.origins.isEmpty ? origins.map(\.asn) : graph.origins }
+
+    func holder(of asn: UInt32) -> String? {
+        if let name = names[asn], !name.isEmpty { return name }
+        return origins.first { $0.asn == asn }.flatMap { $0.holder.isEmpty ? nil : $0.holder }
+    }
+}

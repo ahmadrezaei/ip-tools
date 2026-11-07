@@ -18,6 +18,16 @@ public enum Clipboard {
         NSPasteboard.general.setString(string, forType: .string)
         #endif
     }
+
+    public static func paste() -> String? {
+        #if canImport(UIKit)
+        UIPasteboard.general.string
+        #elseif canImport(AppKit)
+        NSPasteboard.general.string(forType: .string)
+        #else
+        nil
+        #endif
+    }
 }
 
 /// Opens the app's page in the system Settings app (no-op on macOS).
@@ -27,6 +37,35 @@ public enum SystemSettings {
         if let url = URL(string: UIApplication.openSettingsURLString) {
             UIApplication.shared.open(url)
         }
+        #endif
+    }
+}
+
+public extension Color {
+    /// Screen background behind cards (`systemGroupedBackground`).
+    static var screenBackground: Color {
+        #if os(iOS)
+        Color(uiColor: .systemGroupedBackground)
+        #else
+        Color(nsColor: .windowBackgroundColor)
+        #endif
+    }
+
+    /// Card fill (`secondarySystemGroupedBackground`).
+    static var cardBackground: Color {
+        #if os(iOS)
+        Color(uiColor: .secondarySystemGroupedBackground)
+        #else
+        Color(nsColor: .controlBackgroundColor)
+        #endif
+    }
+
+    /// Text field fill (`quaternarySystemFill`).
+    static var fieldFill: Color {
+        #if os(iOS)
+        Color(uiColor: .quaternarySystemFill)
+        #else
+        Color(nsColor: .quaternarySystemFill)
         #endif
     }
 }
@@ -50,5 +89,20 @@ public extension View {
         #else
         self
         #endif
+    }
+
+    func largeNavigationTitle() -> some View {
+        #if os(iOS)
+        self.navigationBarTitleDisplayMode(.large)
+        #else
+        self
+        #endif
+    }
+
+    /// Rounded card used for stats, charts and result lists.
+    func cardStyle(padding: CGFloat = 12) -> some View {
+        self
+            .padding(padding)
+            .background(Color.cardBackground, in: RoundedRectangle(cornerRadius: 12, style: .continuous))
     }
 }

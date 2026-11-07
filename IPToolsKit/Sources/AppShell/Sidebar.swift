@@ -4,13 +4,55 @@
 import SharedUI
 import SwiftUI
 
+/// iPad / Mac sidebar: tools, recents, and a Settings row.
 struct Sidebar: View {
-    @Binding var selection: Tool
+    let environment: AppEnvironment
+    @Binding var showSettings: Bool
 
     var body: some View {
-        List(Tool.allCases, selection: Binding<Tool?>(get: { selection }, set: { if let tool = $0 { selection = tool } })) { tool in
-            Label(tool.title, systemImage: tool.systemImage).tag(tool)
+        @Bindable var router = environment.router
+        List(selection: Binding<Tool?>(get: { router.selectedTool }, set: { if let tool = $0 { router.selectedTool = tool } })) {
+            Section("Tools") {
+                ForEach(Tool.allCases) { tool in
+                    Label(tool.title, systemImage: tool.systemImage).tag(tool)
+                }
+            }
+            if !environment.recents.items.isEmpty {
+                Section("Recent") {
+                    ForEach(environment.recents.items) { item in
+                        Button {
+                            router.open(item.lastTool, target: item.display, autostart: false)
+                        } label: {
+                            VStack(alignment: .leading, spacing: 1) {
+                                Text(item.display).lineLimit(1).truncationMode(.middle)
+                                (Text(item.lastTool.title) + Text(verbatim: " · \(Format.relative(item.date))"))
+                                    .font(.caption).foregroundStyle(.secondary)
+                            }
+                        }
+                        .buttonStyle(.plain)
+                        .swipeActions(edge: .trailing) {
+                            Button(role: .destructive) { environment.recents.remove(item) } label: {
+                                Label("Delete", systemImage: "trash")
+                            }
+                        }
+                    }
+                }
+            }
         }
         .navigationTitle("IP Tools")
+        .safeAreaInset(edge: .bottom) {
+            Button { showSettings = true } label: {
+                Label("Settings", systemImage: "gearshape")
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .padding(.horizontal, 16).padding(.vertical, 12)
+            }
+            .buttonStyle(.plain)
+            .background(.bar)
+            .accessibilityIdentifier("sidebarSettings")
+        }
     }
+}
+
+#Preview {
+    NavigationStack { Sidebar(environment: .preview(), showSettings: .constant(false)) }
 }

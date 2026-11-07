@@ -4,7 +4,8 @@
 import Foundation
 
 public enum ASName {
-    private static let suffixes = [
+    private static let suffixes = rawSuffixes.sorted { $0.count > $1.count }   // longest match wins (" Pte. Ltd." before " Ltd.")
+    private static let rawSuffixes = [
         ", Inc.", " Inc.", ", LLC", " LLC", " Ltd.", " Ltd", " Limited", " S.A.", " SA", " GmbH", " B.V.", " B.V",
         " AB", " AG", " S.p.A.", " e.V.", " UG", " Sdn Bhd", " Pte. Ltd.",
     ]

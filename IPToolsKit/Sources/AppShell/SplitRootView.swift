@@ -9,11 +9,12 @@ import TraceFeature
 
 struct SplitRootView: View {
     let environment: AppEnvironment
+    @State private var showSettings = false
 
     var body: some View {
-        @Bindable var router = environment.router
+        let router = environment.router
         NavigationSplitView {
-            Sidebar(selection: $router.selectedTool)
+            Sidebar(environment: environment, showSettings: $showSettings)
         } detail: {
             NavigationStack {
                 switch router.selectedTool {
@@ -22,6 +23,11 @@ struct SplitRootView: View {
                 case .bgp: BGPMapView(model: environment.bgp)
                 }
             }
+            .id(router.selectedTool)
+        }
+        .navigationSplitViewStyle(.balanced)
+        .sheet(isPresented: $showSettings) {
+            SettingsSheet { SettingsView(environment: environment) }
         }
     }
 }

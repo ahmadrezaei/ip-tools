@@ -19,7 +19,7 @@ import TraceFeature
         self.recents = recents
         self.settings = settings
         self.network = network
-        self.ping = PingModel(service: pingService, settings: settings, recents: recents)
+        self.ping = PingModel(service: pingService, settings: settings, recents: recents, router: router)
         self.trace = TraceModel(service: traceService, asnLookup: ASNLookup(api: api), settings: settings,
                                 recents: recents, router: router)
         self.bgp = BGPMapModel(api: api, recents: recents, router: router)

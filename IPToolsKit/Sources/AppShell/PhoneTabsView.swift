@@ -22,8 +22,6 @@ struct PhoneTabsView: View {
             NavigationStack { BGPMapView(model: environment.bgp) }
                 .tabItem { Label(Tool.bgp.title, systemImage: Tool.bgp.systemImage) }
                 .tag(Tool.bgp)
-            NavigationStack { SettingsView(environment: environment) }
-                .tabItem { Label("Settings", systemImage: "gearshape") }
         }
     }
 }

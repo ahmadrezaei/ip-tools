@@ -43,11 +43,21 @@ public struct GraphEdge: Identifiable, Hashable, Sendable {
 public struct ASGraph: Sendable {
     public let nodes: [GraphNode]
     public let edges: [GraphEdge]
+    /// Origin ASNs, most frequent first (the primary origin is `origins[0]`). More than one means MOAS.
     public let origins: [UInt32]
+    /// Number of valid (cleaned, kept) paths. `totalPaths + discardedPaths` is the number of input paths.
     public let totalPaths: Int
     public let discardedPaths: Int
+    /// Number of layers (columns): the origin layer is 0, so the highest layer index is `layerCount - 1`.
     public let layerCount: Int
     public let cleanedPaths: [ObservedPath]
+    /// Number of kept paths that had AS_SET tokens removed.
+    public internal(set) var asSetPaths: Int = 0
+
+    /// Uncollapsed ASNs per layer, ranked by score (pathCount + transitCount) descending, ties by lower ASN.
+    var rankedByLayer: [Int: [UInt32]] = [:]
+    var layerByASN: [UInt32: Int] = [:]
+    private var nodeIndex: [NodeID: Int] = [:]
 
     public init(nodes: [GraphNode], edges: [GraphEdge], origins: [UInt32], totalPaths: Int,
                 discardedPaths: Int, layerCount: Int, cleanedPaths: [ObservedPath]) {
@@ -58,13 +68,50 @@ public struct ASGraph: Sendable {
         self.discardedPaths = discardedPaths
         self.layerCount = layerCount
         self.cleanedPaths = cleanedPaths
+        for (i, node) in nodes.enumerated() { nodeIndex[node.id] = i }
     }
 
-    public func node(_ id: NodeID) -> GraphNode? { nodes.first { $0.id == id } }
-    /// Stub: owned by the graph agent.
+    public func node(_ id: NodeID) -> GraphNode? { nodeIndex[id].map { nodes[$0] } }
+
+    /// Cleaned paths that contain `asn` (collapsed or not).
     public func paths(through asn: UInt32) -> [ObservedPath] { cleanedPaths.filter { $0.asns.contains(asn) } }
-    /// Stub: owned by the graph agent. Edge ids after collapsing.
-    public func highlightedEdges(through asn: UInt32) -> Set<String> { [] }
-    /// Stub: owned by the graph agent. Uncollapsed, sorted by score (List "Show all").
-    public func allASNs(inLayer: Int) -> [UInt32] { [] }
+
+    /// The node that represents `asn` in this (collapsed) graph: itself, or its layer's `.more` bucket.
+    public func nodeID(for asn: UInt32) -> NodeID? {
+        if nodeIndex[.asn(asn)] != nil { return .asn(asn) }
+        guard let layer = layerByASN[asn], nodeIndex[.more(layer: layer)] != nil else { return nil }
+        return .more(layer: layer)
+    }
+
+    /// Edge ids (`GraphEdge.id`, after collapsing) used by any path through `asn`.
+    public func highlightedEdges(through asn: UInt32) -> Set<String> {
+        var result: Set<String> = []
+        for path in paths(through: asn) {
+            let ids = path.asns.compactMap { nodeID(for: $0) }
+            for (a, b) in zip(ids, ids.dropFirst()) where a != b {
+                result.insert("\(a)>\(b)")
+            }
+        }
+        return result
+    }
+
+    /// All ASNs in a layer, uncollapsed, sorted by score (List "Show all").
+    public func allASNs(inLayer layer: Int) -> [UInt32] { rankedByLayer[layer] ?? [] }
+
+    /// Unique cleaned AS paths with how many routes and how many distinct collectors saw each, most frequent first.
+    public func uniquePaths() -> [(asns: [UInt32], count: Int, collectors: Int)] {
+        var groups: [[UInt32]: (count: Int, collectors: Set<String>)] = [:]
+        for path in cleanedPaths {
+            var g = groups[path.asns] ?? (0, [])
+            g.count += 1
+            g.collectors.insert(path.collector)
+            groups[path.asns] = g
+        }
+        return groups
+            .map { (asns: $0.key, count: $0.value.count, collectors: $0.value.collectors.count) }
+            .sorted { a, b in
+                if a.count != b.count { return a.count > b.count }
+                return a.asns.lexicographicallyPrecedes(b.asns)
+            }
+    }
 }

@@ -6,15 +6,22 @@ import SharedUI
 import SwiftUI
 import TraceFeature
 
+/// Combined settings (iPad sidebar footer): all tools' settings plus About.
 struct SettingsView: View {
     let environment: AppEnvironment
 
     var body: some View {
         Form {
-            NavigationLink("Ping") { PingSettingsView(settings: environment.settings) }
-            NavigationLink("Traceroute") { TraceSettingsView(settings: environment.settings) }
-            NavigationLink("About") { AboutView(environment: environment) }
+            Section("Tools") {
+                NavigationLink("Ping") { PingSettingsView(settings: environment.settings, showsAbout: false) }
+                NavigationLink("Traceroute") { TraceSettingsView(settings: environment.settings, showsAbout: false) }
+            }
+            AboutSections(environment: environment)
         }
         .navigationTitle("Settings")
     }
+}
+
+#Preview {
+    NavigationStack { SettingsView(environment: .preview()) }
 }

@@ -3,9 +3,14 @@
 
 import Foundation
 
-/// Offline `RIPEstatAPI` for previews and tests. It serves built-in sample data modelled on `1.1.1.0/24`
-/// (AS13335 behind a handful of transit networks), so it works with any bundle. `fixtureBundle` is kept
-/// for the real fixture-backed implementation (the data agent may switch to decoding `Fixtures/*.json`).
+/// Offline `RIPEstatAPI` for previews and tests. It decodes the real captured responses in `Fixtures/*.json`
+/// (looked up in `fixtureBundle`, in a `Fixtures` subdirectory or flat) with the same parsing as the live client.
+/// Anything without a fixture, or any bundle without fixtures, falls back to built-in sample data modelled on
+/// `1.1.1.0/24` (AS13335 behind a handful of transit networks), so it works with any bundle.
+///
+/// Fixture names: `network-info_<ip>`, `prefix-overview_<prefix>`, `bgp-state_<prefix>` (preferred) or
+/// `looking-glass_<prefix>`, `as-overview_AS<n>`, `as-names_*` (all merged), `announced-prefixes_AS<n>`,
+/// `routing-status_<prefix>`; `/` and `:` in a resource become `-`.
 public struct MockRIPEstat: RIPEstatAPI {
     public let fixtureBundle: Bundle
     private let latency: Duration
@@ -46,24 +51,74 @@ public struct MockRIPEstat: RIPEstatAPI {
 
     private func pause() async throws { try await Task.sleep(for: latency) }
 
+    // MARK: Fixture access
+
+    static func fixtureKey(_ resource: String) -> String {
+        resource.replacingOccurrences(of: "/", with: "-").replacingOccurrences(of: ":", with: "-")
+    }
+
+    private func fixtureURL(_ name: String) -> URL? {
+        fixtureBundle.url(forResource: name, withExtension: "json", subdirectory: "Fixtures")
+            ?? fixtureBundle.url(forResource: name, withExtension: "json")
+    }
+
+    private func fixtureData(_ name: String) -> Data? {
+        fixtureURL(name).flatMap { try? Data(contentsOf: $0) }
+    }
+
+    private func allNameFixtures() -> [UInt32: String] {
+        var urls = fixtureBundle.urls(forResourcesWithExtension: "json", subdirectory: "Fixtures") ?? []
+        urls += fixtureBundle.urls(forResourcesWithExtension: "json", subdirectory: nil) ?? []
+        var merged: [UInt32: String] = [:]
+        for url in urls.sorted(by: { $0.lastPathComponent < $1.lastPathComponent })
+        where url.lastPathComponent.hasPrefix("as-names_") {
+            if let data = try? Data(contentsOf: url), let names = try? RIPEstatParsing.asNames(data) {
+                merged.merge(names) { a, _ in a }
+            }
+        }
+        return merged
+    }
+
+    private func isPrivate(_ resource: String) -> Bool {
+        resource.hasPrefix("10.") || resource.hasPrefix("192.168.") || resource.lowercased().hasPrefix("fd")
+    }
+
+    // MARK: RIPEstatAPI
+
     public func networkInfo(_ ip: String) async throws -> NetworkInfo {
         try await pause()
-        if ip.hasPrefix("10.") || ip.hasPrefix("192.168.") { return NetworkInfo(prefix: nil, originASNs: []) }
+        if let data = fixtureData("network-info_\(Self.fixtureKey(ip))") { return try RIPEstatParsing.networkInfo(data) }
+        if isPrivate(ip) { return NetworkInfo(prefix: nil, originASNs: []) }
         if ip.hasPrefix("1.1.1.") { return NetworkInfo(prefix: "1.1.1.0/24", originASNs: [13335]) }
         return NetworkInfo(prefix: "8.8.8.0/24", originASNs: [15169])
     }
 
     public func prefixOverview(_ prefix: String) async throws -> PrefixOverview {
         try await pause()
+        if let data = fixtureData("prefix-overview_\(Self.fixtureKey(prefix))") {
+            return try RIPEstatParsing.prefixOverview(data, resource: prefix)
+        }
         let asn: UInt32 = prefix.hasPrefix("8.8.") ? 15169 : 13335
-        return PrefixOverview(resource: prefix, announced: !prefix.hasPrefix("10."),
+        return PrefixOverview(resource: prefix, announced: !isPrivate(prefix),
                               origins: [ASHolder(asn: asn, holder: Self.sampleNames[asn] ?? "AS\(asn)")])
     }
 
     public func lookingGlass(_ resource: String) async throws -> LookingGlass {
         try await pause()
-        guard !resource.hasPrefix("10.") else { return LookingGlass(collectors: [], routes: [], latestTime: nil) }
-        let prefix = resource.contains("/") ? resource : "1.1.1.0/24"
+        var prefix = resource
+        if !resource.contains("/") {
+            if let data = fixtureData("network-info_\(Self.fixtureKey(resource))"),
+               let info = try? RIPEstatParsing.networkInfo(data) {
+                guard let p = info.prefix else { return LookingGlass(collectors: [], routes: [], latestTime: nil) }
+                prefix = p
+            } else if !isPrivate(resource) {
+                prefix = resource.hasPrefix("8.8.") ? "8.8.8.0/24" : "1.1.1.0/24"
+            }
+        }
+        let key = Self.fixtureKey(prefix)
+        if let data = fixtureData("bgp-state_\(key)") { return try RIPEstatParsing.bgpState(data) }
+        if let data = fixtureData("looking-glass_\(key)") { return try RIPEstatParsing.lookingGlass(data) }
+        guard !isPrivate(prefix) else { return LookingGlass(collectors: [], routes: [], latestTime: nil) }
         let origin: UInt32 = prefix.hasPrefix("8.8.") ? 15169 : 13335
         var routes: [LookingGlass.Route] = []
         let now = Date()
@@ -87,23 +142,29 @@ public struct MockRIPEstat: RIPEstatAPI {
 
     public func asOverview(_ asn: UInt32) async throws -> ASOverview {
         try await pause()
+        if let data = fixtureData("as-overview_AS\(asn)") { return try RIPEstatParsing.asOverview(data, asn: asn) }
         return ASOverview(asn: asn, holder: Self.sampleNames[asn], announced: true)
     }
 
     public func asNames(_ asns: [UInt32]) async throws -> [UInt32: String] {
         try await pause()
+        let fixtures = allNameFixtures()
         var result: [UInt32: String] = [:]
-        for asn in asns { result[asn] = Self.sampleNames[asn] ?? "AS\(asn) Example Network" }
+        for asn in asns {
+            result[asn] = fixtures[asn] ?? Self.sampleNames[asn] ?? "AS\(asn) Example Network"
+        }
         return result
     }
 
     public func announcedPrefixes(_ asn: UInt32) async throws -> [String] {
         try await pause()
+        if let data = fixtureData("announced-prefixes_AS\(asn)") { return try RIPEstatParsing.announcedPrefixes(data) }
         return (0..<24).map { "104.16.\($0).0/24" } + ["1.1.1.0/24", "1.0.0.0/24", "2606:4700::/32"]
     }
 
     public func routingStatus(_ prefix: String) async throws -> RoutingStatus {
         try await pause()
+        if let data = fixtureData("routing-status_\(Self.fixtureKey(prefix))") { return try RIPEstatParsing.routingStatus(data) }
         return RoutingStatus(v4: .init(seeing: 319, total: 319), v6: nil, origins: [13335])
     }
 }
