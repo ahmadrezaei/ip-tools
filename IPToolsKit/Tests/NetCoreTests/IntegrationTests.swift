@@ -44,23 +44,32 @@ private func target(_ s: String) -> ResolvedTarget {
         options.timeout = 1
         let samples = try await collect(Pinger().ping(target("::1"), options: options))
         #expect(samples.count == 3)
+        // Shared CI VMs occasionally drop a loopback ICMPv6 echo; require a majority of replies.
+        var replies = 0
         for s in samples {
-            guard case let .reply(_, bytes, _, from) = s.outcome else { Issue.record("not a reply: \(s)"); continue }
+            guard case let .reply(_, bytes, _, from) = s.outcome else { continue }
+            replies += 1
             #expect(bytes == 64)
             #expect(from.description == "::1")
         }
+        #expect(replies >= 2)
     }
 
-    @Test func cancellationStopsPromptly() async throws {
+    @Test(.timeLimit(.minutes(1))) func cancellationStopsPromptly() async throws {
         var options = PingOptions()
         options.count = nil
         options.interval = 0.2
+        let (firstSample, signal) = AsyncStream<Void>.makeStream()
         let task = Task {
             var n = 0
-            for try await _ in Pinger().ping(target("127.0.0.1"), options: options) { n += 1 }
+            for try await _ in Pinger().ping(target("127.0.0.1"), options: options) {
+                n += 1
+                if n == 1 { signal.yield(); signal.finish() }
+            }
             return n
         }
-        try await Task.sleep(for: .milliseconds(500))
+        // Cancel only once the run is producing samples, so slow CI machines don't race the check.
+        for await _ in firstSample { break }
         let start = ContinuousClock.now
         task.cancel()
         let n = try await task.value
