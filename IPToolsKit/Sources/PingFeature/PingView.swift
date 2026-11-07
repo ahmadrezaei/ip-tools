@@ -7,7 +7,6 @@ import SwiftUI
 
 public struct PingView: View {
     @Bindable private var model: PingModel
-    @Environment(\.scenePhase) private var scenePhase
     #if os(iOS)
     @Environment(\.horizontalSizeClass) private var sizeClass
     #endif
@@ -47,7 +46,6 @@ public struct PingView: View {
         }
         .onAppear { model.consumePendingRequest() }
         .onChange(of: model.router?.requestTick) { model.consumePendingRequest() }
-        .onChange(of: scenePhase) { if scenePhase != .active { model.stopForBackground() } }
     }
 
     @ViewBuilder private var content: some View {

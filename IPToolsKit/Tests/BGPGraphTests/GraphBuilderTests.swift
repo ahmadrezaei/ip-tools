@@ -278,3 +278,19 @@ import RIPEstat
         #expect(g.layerSizes() == [1, 240, 48, 7])
     }
 }
+
+@Suite struct GraphDerivedDataTests {
+    @Test func countsGroupsAndHighlight() {
+        let g = GraphBuilder.build(from: [path(1, 2, 9), path(1, 2, 9, collector: "RRC01"), path(3, 9)],
+                                   options: .init(maxNodesPerLayer: 6))
+        #expect(g.pathCounts[2] == 2 && g.transitCounts[2] == 2 && g.transitCounts[9] == nil)
+        #expect(g.collectorsByASN[2] == ["RRC00", "RRC01"])
+        #expect(g.layerByASN[9] == 0 && g.layerByASN[1] == 2)
+        #expect(g.pathGroups.first?.count == 2 && g.pathGroups.first?.collectors == 2)
+        #expect(g.pathGroups(through: [3]).count == 1)
+        let h = g.highlight(through: [2])
+        #expect(h.nodes == [.asn(1), .asn(2), .asn(9)])
+        #expect(!h.nodes.contains(.asn(3)))
+        #expect(h.edges.count == 2)
+    }
+}

@@ -50,16 +50,3 @@ struct AboutSections: View {
         }
     }
 }
-
-struct AboutView: View {
-    let environment: AppEnvironment
-
-    var body: some View {
-        Form { AboutSections(environment: environment) }
-            .navigationTitle("About")
-    }
-}
-
-#Preview {
-    NavigationStack { AboutView(environment: .preview()) }
-}

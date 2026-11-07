@@ -112,4 +112,20 @@ import NetCore
         #expect(reloaded.trace.options.maxHops == 15)
         #expect(reloaded.addressPreference == .ipv6)
     }
+
+    @Test func settingsDecodingToleratesMissingFields() {
+        let json = #"{"ping":{"count":5,"interval":2},"trace":{"options":{"maxHops":12},"lookUpASNs":false},"addressPreference":"ipv4"}"#
+        let decoded = SettingsStore.decodeSnapshot(Data(json.utf8))
+        #expect(decoded?.ping.count == 5)
+        #expect(decoded?.ping.interval == 2)
+        #expect(decoded?.ping.payloadSize == PingOptions.default.payloadSize)   // missing -> default
+        #expect(decoded?.trace.options.maxHops == 12)
+        #expect(decoded?.trace.options.probesPerHop == TraceOptions.default.probesPerHop)
+        #expect(decoded?.trace.resolveHostnames == true)                         // missing -> default
+        #expect(decoded?.trace.lookUpASNs == false)
+        #expect(decoded?.addressPreference == .ipv4)
+        let partial = SettingsStore.decodeSnapshot(Data(#"{"addressPreference":"ipv6"}"#.utf8))
+        #expect(partial?.addressPreference == .ipv6)
+        #expect(partial?.ping == PingOptions.default)
+    }
 }

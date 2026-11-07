@@ -45,7 +45,7 @@ public struct TraceHop: Identifiable, Hashable, Sendable {
     public enum Phase: Equatable { case idle, resolving, tracing(currentTTL: Int), finished(TraceCompletion), stopped(String?), failed(String) }
 
     public typealias ResolveFunction = @Sendable (String, AddressPreference) async throws -> ResolvedTarget
-    public typealias ReverseDNSFunction = @Sendable (IPAddress) async -> String?
+    public typealias ReverseDNSFunction = @Sendable (IPAddress) async -> ReverseLookupResult
 
     public var targetText: String = ""
     public internal(set) var phase: Phase = .idle
@@ -78,7 +78,7 @@ public struct TraceHop: Identifiable, Hashable, Sendable {
     public init(service: any TraceService, asnLookup: ASNLookup, settings: SettingsStore,
                 recents: RecentsStore, router: AppRouter,
                 resolve: @escaping ResolveFunction = { try await Resolver.resolve($0, preference: $1) },
-                reverseDNS: @escaping ReverseDNSFunction = { await Resolver.reverseName(for: $0, timeout: .seconds(2)) }) {
+                reverseDNS: @escaping ReverseDNSFunction = { await Resolver.reverseLookup(for: $0, timeout: .seconds(5)) }) {
         self.service = service
         self.asnLookup = asnLookup
         self.settings = settings
@@ -125,19 +125,21 @@ public struct TraceHop: Identifiable, Hashable, Sendable {
             do {
                 let target = try await resolve(input, preference)
                 try Task.checkCancellation()
-                guard let self, self.generation == gen else { return }
+                guard let self, !Task.isCancelled, self.generation == gen else { return }
                 self.resolved = target
                 self.phase = .tracing(currentTTL: 1)
                 self.recents.record(input, tool: .traceroute)
                 for try await event in self.service.trace(target, options: options) {
-                    guard self.isBusy, !Task.isCancelled else { break }
+                    guard !Task.isCancelled, self.generation == gen, self.isBusy else { break }
                     self.handle(event, target: target, options: options)
                 }
+                guard !Task.isCancelled, self.generation == gen else { return }
                 if self.isBusy { self.phase = .finished(.maxHopsExceeded) }
             } catch is CancellationError {
                 // stop() already set the phase
             } catch {
-                self?.fail(ToolError.from(error))
+                guard !Task.isCancelled, let self, self.generation == gen else { return }
+                self.fail(ToolError.from(error))
             }
         }
     }
@@ -158,9 +160,13 @@ public struct TraceHop: Identifiable, Hashable, Sendable {
     /// Picks up a request handed over by the router (cross-links auto-start, recents only pre-fill).
     public func consumePendingRequest() {
         guard let request = router.takeRequest(for: .traceroute) else { return }
-        if isBusy { stop() }
-        targetText = request.target
-        if request.autostart { start() }
+        if request.autostart {
+            if isBusy { stop() }
+            targetText = request.target
+            start()
+        } else if !isBusy {
+            targetText = request.target
+        }
     }
 
     // MARK: - Cross-links
@@ -244,8 +250,8 @@ public struct TraceHop: Identifiable, Hashable, Sendable {
             let reverseDNS = self.reverseDNS
             let limiter = dnsLimiter
             Task { [weak self] in
-                let name = await limiter.run { await reverseDNS(address) }
-                self?.applyHostname(name, to: address, generation: gen)
+                let result = await limiter.run { await reverseDNS(address) }
+                self?.applyHostname(result, to: address, generation: gen)
             }
         }
         if lookUpASNs, address.isPubliclyRoutable, asnCache[address] == nil {
@@ -257,7 +263,16 @@ public struct TraceHop: Identifiable, Hashable, Sendable {
         }
     }
 
-    private func applyHostname(_ name: String?, to address: IPAddress, generation gen: Int) {
+    private func applyHostname(_ result: ReverseLookupResult, to address: IPAddress, generation gen: Int) {
+        let name: String?
+        switch result {
+        case let .name(value): name = value
+        case .noName: name = nil
+        case .timedOut:
+            // Never cached: a later run (or a later sighting of this address) may retry.
+            if gen == generation { requested.remove(address) }
+            return
+        }
         hostnameCache[address] = .some(name)
         guard gen == generation, let name else { return }
         for index in hops.indices where hops[index].addresses.first == address {

@@ -8,7 +8,6 @@ import SwiftUI
 
 public struct TraceView: View {
     @Bindable private var model: TraceModel
-    @Environment(\.scenePhase) private var scenePhase
     @State private var showSettings = false
 
     public init(model: TraceModel) {
@@ -37,7 +36,6 @@ public struct TraceView: View {
         }
         .onAppear { model.consumePendingRequest() }
         .onChange(of: model.router.requestTick) { model.consumePendingRequest() }
-        .onChange(of: scenePhase) { if scenePhase != .active { model.stopForBackground() } }
     }
 
     @ViewBuilder private var content: some View {

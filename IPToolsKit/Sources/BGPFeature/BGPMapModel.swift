@@ -153,7 +153,7 @@ import SharedUI
     /// Grows K just enough to show `asn` and selects it. Used by the "+more" list.
     func promote(_ asn: UInt32) {
         guard let stats else { return }
-        if case .asn? = stats.nodeFor[asn] { selection = .asn(asn); return }
+        if case .asn? = stats.nodeFor(asn) { selection = .asn(asn); return }
         guard let layer = stats.layer[asn], let rank = stats.layerMembers[layer]?.firstIndex(of: asn) else { return }
         pendingSelection = .asn(asn)
         selection = nil
@@ -371,20 +371,20 @@ import SharedUI
         }
         switch selection {
         case let .asn(asn):
-            highlight = stats.highlight(through: [asn], graph: result.graph)
+            highlight = stats.highlight(through: [asn])
         case .more:
             guard let node = result.graph.node(selection) else {
                 highlight = nil
                 return
             }
-            highlight = stats.highlight(through: Set(node.collapsed), graph: result.graph)
+            highlight = stats.highlight(through: Set(node.collapsed))
         }
     }
 
     /// The displayed node that stands for the selection (the bucket when the AS is collapsed).
     var selectedNodeID: NodeID? {
         guard let selection else { return nil }
-        if case let .asn(asn) = selection { return stats?.nodeFor[asn] ?? selection }
+        if case let .asn(asn) = selection { return stats?.nodeFor(asn) ?? selection }
         return selection
     }
 

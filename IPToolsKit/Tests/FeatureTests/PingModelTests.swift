@@ -113,6 +113,42 @@ import SharedUI
         #expect(recents.items.isEmpty)
     }
 
+    @Test func staleResolveFailureDoesNotAffectNewerRun() async {
+        let ip = cloudflare
+        let calls = CallCounter()
+        let (model, _, _) = makeModel(script: [.reply(rtt: 0.01, bytes: 64, ttl: 58, from: ip)], count: nil, resolve: { input, _ in
+            if calls.next() == 1 {
+                try? await Task.sleep(for: .milliseconds(150))   // ignores cancellation, then fails late
+                throw NetError.resolutionFailed(host: input, reason: "late")
+            }
+            return ResolvedTarget(input: input, address: ip, hostname: nil, allAddresses: [ip])
+        })
+        model.targetText = "slow.example"
+        model.start()
+        model.stop()
+        model.targetText = "1.1.1.1"
+        model.start()
+        #expect(await waitUntil { model.phase == .running })
+        try? await Task.sleep(for: .milliseconds(300))
+        #expect(model.phase == .running)
+        #expect(model.error == nil)
+        model.stop()
+    }
+
+    @Test func pendingRecentOnlyPrefillsWhileBusy() async {
+        let ip = cloudflare
+        let router = AppRouter()
+        let (model, _, _) = makeModel(script: [.reply(rtt: 0.01, bytes: 64, ttl: 58, from: ip)], count: nil, router: router)
+        model.targetText = "1.1.1.1"
+        model.start()
+        #expect(await waitUntil { model.phase == .running })
+        router.open(.ping, target: "8.8.8.8", autostart: false)
+        model.consumePendingRequest()
+        #expect(model.phase == .running)
+        #expect(model.targetText == "1.1.1.1")
+        model.stop()
+    }
+
     @Test func startIsIgnoredWhileRunning() async {
         let ip = cloudflare
         let (model, _, _) = makeModel(script: [.reply(rtt: 0.01, bytes: 64, ttl: 58, from: ip)], count: nil)
@@ -225,4 +261,10 @@ import SharedUI
         #expect(PingChart.niceMax(100) == 200)
         #expect(PingChart.niceMax(8) == 10)
     }
+}
+
+final class CallCounter: @unchecked Sendable {
+    private let lock = NSLock()
+    private var count = 0
+    func next() -> Int { lock.withLock { count += 1; return count } }
 }

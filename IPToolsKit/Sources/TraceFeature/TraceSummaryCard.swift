@@ -12,7 +12,10 @@ struct TraceSummaryCard: View {
     let hops: [TraceHop]
     let maxHops: Int
 
-    private var name: String { target?.input ?? "" }
+    /// Resolved host name of the destination hop, else the target's host name, else what was typed.
+    private var name: String {
+        hops.last(where: \.isDestination)?.hostname ?? target?.hostname ?? target?.input ?? ""
+    }
 
     var body: some View {
         HStack(alignment: .top, spacing: 12) {

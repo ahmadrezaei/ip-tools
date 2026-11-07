@@ -19,15 +19,6 @@ public enum Clipboard {
         #endif
     }
 
-    public static func paste() -> String? {
-        #if canImport(UIKit)
-        UIPasteboard.general.string
-        #elseif canImport(AppKit)
-        NSPasteboard.general.string(forType: .string)
-        #else
-        nil
-        #endif
-    }
 }
 
 /// Opens the app's page in the system Settings app (no-op on macOS).
@@ -66,6 +57,32 @@ public extension Color {
         Color(uiColor: .quaternarySystemFill)
         #else
         Color(nsColor: .quaternarySystemFill)
+        #endif
+    }
+}
+
+/// System paste control: reads the pasteboard only on tap, without the "Allow Paste" prompt (iOS).
+struct PasteFieldButton: View {
+    let onPaste: (String) -> Void
+
+    var body: some View {
+        #if os(iOS)
+        PasteButton(payloadType: String.self) { strings in
+            if let text = strings.first { onPaste(text.trimmingCharacters(in: .whitespacesAndNewlines)) }
+        }
+        .labelStyle(.iconOnly)
+        .buttonBorderShape(.capsule)
+        .tint(.secondary)
+        .accessibilityLabel("Paste")
+        #else
+        Button {
+            if let text = NSPasteboard.general.string(forType: .string) {
+                onPaste(text.trimmingCharacters(in: .whitespacesAndNewlines))
+            }
+        } label: { Image(systemName: "doc.on.clipboard") }
+        .buttonStyle(.plain)
+        .foregroundStyle(.secondary)
+        .accessibilityLabel("Paste")
         #endif
     }
 }

@@ -41,7 +41,7 @@ public final class RIPEstatClient: RIPEstatAPI, Sendable {
 
     public init(session: URLSession = .shared,
                 baseURL: URL = URL(string: "https://stat.ripe.net/data/")!,
-                sourceApp: String = "ip-tools-ios",
+                sourceApp: String = "ahmadrezaei-iptools",
                 maxConcurrent: Int = 4) {
         self.session = session
         self.baseURL = baseURL
@@ -200,7 +200,8 @@ public final class RIPEstatClient: RIPEstatAPI, Sendable {
 /// Limits in-flight requests (etiquette: at most 4).
 actor ConcurrencyGate {
     private var available: Int
-    private var waiters: [CheckedContinuation<Void, Never>] = []
+    private var waiters: [(id: UInt64, continuation: CheckedContinuation<Void, any Error>)] = []
+    private var nextID: UInt64 = 0
 
     init(limit: Int) { available = limit }
 
@@ -210,16 +211,31 @@ actor ConcurrencyGate {
             available -= 1
             return
         }
-        await withCheckedContinuation { waiters.append($0) }
-        if Task.isCancelled {
-            release()
-            throw CancellationError()
+        let id = nextID
+        nextID += 1
+        try await withTaskCancellationHandler {
+            try await withCheckedThrowingContinuation { (c: CheckedContinuation<Void, any Error>) in
+                if Task.isCancelled {
+                    c.resume(throwing: CancellationError())
+                } else {
+                    waiters.append((id, c))
+                }
+            }
+        } onCancel: {
+            Task { await self.cancelWaiter(id) }
         }
     }
 
-    func release() {
-        if waiters.isEmpty { available += 1 } else { waiters.removeFirst().resume() }
+    private func cancelWaiter(_ id: UInt64) {
+        guard let index = waiters.firstIndex(where: { $0.id == id }) else { return }
+        waiters.remove(at: index).continuation.resume(throwing: CancellationError())
     }
+
+    func release() {
+        if waiters.isEmpty { available += 1 } else { waiters.removeFirst().continuation.resume() }
+    }
+
+    var waitingCount: Int { waiters.count }
 }
 
 /// In-memory response cache: keyed by URL, 5 minute TTL, bounded.

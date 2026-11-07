@@ -148,8 +148,6 @@ public enum GraphBuilder {
         var graph = ASGraph(nodes: nodes, edges: edges, origins: origins, totalPaths: cleaned.count,
                             discardedPaths: discarded, layerCount: maxLayer + 1, cleanedPaths: cleaned)
         graph.asSetPaths = asSetPaths
-        graph.rankedByLayer = ranked
-        graph.layerByASN = layer
         return graph
     }
 }

@@ -5,17 +5,13 @@ import BGPGraph
 import Foundation
 import RIPEstat
 
-/// Derived numbers for one `ASGraph`, computed from its cleaned paths. The UI reads these instead of asking
-/// the graph for per-AS data so that ASes hidden inside a "+more" bucket can still be described.
+/// Thin adapter over `ASGraph`'s precomputed counts and path grouping (the single implementation lives in
+/// BGPGraph). The UI reads these instead of asking the graph per AS so that ASes hidden inside a "+more"
+/// bucket can still be described.
 struct BGPStats: Sendable {
     enum Role: Sendable { case origin, transit, peer }
 
-    struct PathGroup: Hashable, Sendable {
-        let asns: [UInt32]
-        let count: Int
-        let collectors: Int
-        var text: String { asns.map(String.init).joined(separator: " ") }
-    }
+    typealias PathGroup = BGPGraph.PathGroup
 
     struct Summary: Sendable {
         let id: NodeID
@@ -27,78 +23,36 @@ struct BGPStats: Sendable {
         let collapsed: [UInt32]
     }
 
-    let total: Int
-    let pathCount: [UInt32: Int]
-    let transitCount: [UInt32: Int]
-    let layer: [UInt32: Int]
-    let collectors: [UInt32: [String]]
-    let nodeFor: [UInt32: NodeID]
-    let origins: Set<UInt32>
-    let groups: [PathGroup]
-    let layerMembers: [Int: [UInt32]]
+    let graph: ASGraph
+    private let originSet: Set<UInt32>
 
     init(graph: ASGraph) {
-        var pathCount: [UInt32: Int] = [:]
-        var transit: [UInt32: Int] = [:]
-        var collectors: [UInt32: Set<String>] = [:]
-        var grouped: [[UInt32]: (count: Int, collectors: Set<String>)] = [:]
-        for path in graph.cleanedPaths {
-            for (index, asn) in path.asns.enumerated() {
-                pathCount[asn, default: 0] += 1
-                if index > 0, index < path.asns.count - 1 { transit[asn, default: 0] += 1 }
-                collectors[asn, default: []].insert(path.collector)
-            }
-            var entry = grouped[path.asns] ?? (0, [])
-            entry.count += 1
-            entry.collectors.insert(path.collector)
-            grouped[path.asns] = entry
-        }
-        var layer: [UInt32: Int] = [:]
-        var nodeFor: [UInt32: NodeID] = [:]
-        for node in graph.nodes {
-            switch node.id {
-            case let .asn(asn):
-                layer[asn] = node.layer
-                nodeFor[asn] = node.id
-            case .more:
-                for asn in node.collapsed {
-                    layer[asn] = node.layer
-                    nodeFor[asn] = node.id
-                }
-            }
-        }
-        let origins = Set(graph.origins)
-        var members: [Int: [UInt32]] = [:]
-        for (asn, l) in layer { members[l, default: []].append(asn) }
-        for key in members.keys {
-            members[key]?.sort { a, b in
-                let sa = (pathCount[a] ?? 0) + (transit[a] ?? 0), sb = (pathCount[b] ?? 0) + (transit[b] ?? 0)
-                return sa != sb ? sa > sb : a < b
-            }
-        }
-        self.total = max(graph.totalPaths, 0)
-        self.pathCount = pathCount
-        self.transitCount = transit
-        self.layer = layer
-        self.collectors = collectors.mapValues { $0.sorted() }
-        self.nodeFor = nodeFor
-        self.origins = origins
-        self.layerMembers = members
-        self.groups = grouped.map { PathGroup(asns: $0.key, count: $0.value.count, collectors: $0.value.collectors.count) }
-            .sorted { $0.count != $1.count ? $0.count > $1.count : $0.asns.lexicographicallyPrecedes($1.asns) }
+        self.graph = graph
+        self.originSet = Set(graph.origins)
     }
 
+    var total: Int { max(graph.totalPaths, 0) }
+    var pathCount: [UInt32: Int] { graph.pathCounts }
+    var transitCount: [UInt32: Int] { graph.transitCounts }
+    var layer: [UInt32: Int] { graph.layerByASN }
+    var collectors: [UInt32: [String]] { graph.collectorsByASN }
+    var groups: [PathGroup] { graph.pathGroups }
+    var layerMembers: [Int: [UInt32]] { graph.rankedByLayer }
+    var origins: Set<UInt32> { originSet }
+
+    func nodeFor(_ asn: UInt32) -> NodeID? { graph.nodeID(for: asn) }
+
     func role(of asn: UInt32) -> Role {
-        if origins.contains(asn) { return .origin }
-        return (transitCount[asn] ?? 0) > 0 ? .transit : .peer
+        if originSet.contains(asn) { return .origin }
+        return (graph.transitCounts[asn] ?? 0) > 0 ? .transit : .peer
     }
 
     func summary(for id: NodeID, graph: ASGraph) -> Summary? {
         switch id {
         case let .asn(asn):
-            guard let count = pathCount[asn] else { return nil }
+            guard let count = graph.pathCounts[asn] else { return nil }
             return Summary(id: id, asn: asn, role: role(of: asn), paths: count, fraction: fraction(count),
-                           hops: layer[asn] ?? 0, collapsed: [])
+                           hops: graph.layerByASN[asn] ?? 0, collapsed: [])
         case .more:
             guard let node = graph.node(id) else { return nil }
             return Summary(id: id, asn: nil, role: nil, paths: node.pathCount, fraction: fraction(node.pathCount),
@@ -108,29 +62,12 @@ struct BGPStats: Sendable {
 
     func fraction(_ count: Int) -> Double { total > 0 ? Double(count) / Double(total) : 0 }
 
-    func groups(through asns: Set<UInt32>) -> [PathGroup] {
-        groups.filter { group in group.asns.contains { asns.contains($0) } }
-    }
+    func groups(through asns: Set<UInt32>) -> [PathGroup] { graph.pathGroups(through: asns) }
 
-    /// Edge and node ids on every path through `asns`, after collapsing.
-    func highlight(through asns: Set<UInt32>, graph: ASGraph) -> BGPHighlight {
-        var nodes = Set<NodeID>()
-        var edges = Set<String>()
-        for path in graph.cleanedPaths where path.asns.contains(where: { asns.contains($0) }) {
-            let ids = path.asns.compactMap { nodeFor[$0] }
-            nodes.formUnion(ids)
-            for pair in zip(ids, ids.dropFirst()) where pair.0 != pair.1 {
-                edges.insert(GraphEdge(from: pair.0, to: pair.1, pathCount: 0, kind: .forward).id)
-            }
-        }
-        return BGPHighlight(nodes: nodes, edges: edges)
-    }
+    func highlight(through asns: Set<UInt32>) -> BGPHighlight { graph.highlight(through: asns) }
 }
 
-struct BGPHighlight: Equatable, Sendable {
-    var nodes: Set<NodeID>
-    var edges: Set<String>
-}
+typealias BGPHighlight = GraphHighlight
 
 /// Text helpers shared by the views and the export.
 enum BGPText {

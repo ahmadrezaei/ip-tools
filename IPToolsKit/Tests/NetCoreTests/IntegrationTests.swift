@@ -135,3 +135,15 @@ private func target(_ s: String) -> ResolvedTarget {
         }
     }
 }
+
+@Suite struct ReverseLookupTests {
+    @Test(.enabled(if: networkTestsEnabled)) func googleDNSHasName() async {
+        let result = await Resolver.reverseLookup(for: IPAddress("8.8.8.8")!, timeout: .seconds(5))
+        #expect(result == .name("dns.google"))
+    }
+
+    @Test(.enabled(if: networkTestsEnabled)) func loopbackIsNotATimeout() async {
+        let result = await Resolver.reverseLookup(for: IPAddress("127.0.0.1")!, timeout: .seconds(5))
+        #expect(result != .timedOut)
+    }
+}

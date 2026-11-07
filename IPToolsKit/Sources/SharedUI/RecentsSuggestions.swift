@@ -3,29 +3,31 @@
 
 import SwiftUI
 
-/// Suggestion list shown under the target field while it is focused.
+/// Suggestion list shown under the target field while it is focused. Rows size to their content (Dynamic Type).
 struct RecentsSuggestions: View {
+    static let maxRows = 5
+
     let suggestions: [RecentTarget]
     let onPick: (RecentTarget) -> Void
     let onDelete: (RecentTarget) -> Void
 
-    private let rowHeight: CGFloat = 52
-
     var body: some View {
-        List {
-            ForEach(suggestions) { item in
+        let items = Array(suggestions.prefix(Self.maxRows))
+        VStack(spacing: 0) {
+            ForEach(items) { item in
                 Button { onPick(item) } label: {
                     RecentRowLabel(item: item)
+                        .padding(.horizontal, 12)
+                        .padding(.vertical, 8)
                 }
                 .buttonStyle(.plain)
-                .swipeActions(edge: .trailing) {
+                .contextMenu {
                     Button(role: .destructive) { onDelete(item) } label: { Label("Delete", systemImage: "trash") }
                 }
+                if item.id != items.last?.id { Divider().padding(.leading, 12) }
             }
         }
-        .listStyle(.plain)
-        .scrollDisabled(true)
-        .frame(height: rowHeight * CGFloat(suggestions.count))
+        .background(Color.cardBackground)
         .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
     }
 }

@@ -25,7 +25,7 @@ public struct RootView: View {
             .environment(\.aboutSection, AnyView(AboutSections(environment: environment)))
             .background(shortcuts)
             .onChange(of: scenePhase) {
-                if scenePhase != .active {
+                if scenePhase == .background {
                     environment.ping.stopForBackground()
                     environment.trace.stopForBackground()
                 }

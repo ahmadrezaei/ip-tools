@@ -38,18 +38,12 @@ struct Sidebar: View {
                     }
                 }
             }
+            Section {
+                Button { showSettings = true } label: { Label("Settings", systemImage: "gearshape") }
+                    .accessibilityIdentifier("sidebarSettings")
+            }
         }
         .navigationTitle("IP Tools")
-        .safeAreaInset(edge: .bottom) {
-            Button { showSettings = true } label: {
-                Label("Settings", systemImage: "gearshape")
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                    .padding(.horizontal, 16).padding(.vertical, 12)
-            }
-            .buttonStyle(.plain)
-            .background(.bar)
-            .accessibilityIdentifier("sidebarSettings")
-        }
     }
 }
 

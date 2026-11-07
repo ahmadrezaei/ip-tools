@@ -31,7 +31,7 @@ import SharedUI
         let model = TraceModel(
             service: MockTraceService(hops: script, delay: .milliseconds(1)),
             asnLookup: ASNLookup(api: api), settings: settings, recents: recents, router: router,
-            reverseDNS: { address in address == IPAddress("192.168.1.1") ? "router.lan" : nil })
+            reverseDNS: { address in address == IPAddress("192.168.1.1") ? .name("router.lan") : .noName })
         return (model, recents, settings)
     }
 
@@ -118,7 +118,7 @@ import SharedUI
         let model = TraceModel(
             service: MockTraceService(hops: script, delay: .milliseconds(40)),
             asnLookup: ASNLookup(api: FakeRIPEstat()), settings: settings, recents: makeRecents(), router: AppRouter(),
-            reverseDNS: { _ in nil })
+            reverseDNS: { _ in .noName })
         model.targetText = "1.1.1.1"
         model.start()
         #expect(await waitUntil { model.hops.count >= 2 })
@@ -186,24 +186,49 @@ import SharedUI
         #expect(TraceExport.line(for: blocked, probes: 1) == " 9  203.0.113.1  10.0 ms  !H")
     }
 
-    @Test func prefixContainment() {
-        let net = IPAddress("141.101.64.0")!
-        #expect(ASNLookup.contains(net, length: 18, IPAddress("141.101.65.1")!))
-        #expect(!ASNLookup.contains(net, length: 18, IPAddress("141.101.128.1")!))
-        #expect(!ASNLookup.contains(net, length: 18, IPAddress("2606:4700::1")!))
-        #expect(ASNLookup.contains(IPAddress("2606:4700::")!, length: 32, IPAddress("2606:4700:4700::1111")!))
-        #expect(ASNLookup.parsePrefix("1.1.1.0/24")?.length == 24)
-        #expect(ASNLookup.parsePrefix("bogus") == nil)
+    @Test func autostartRequestWhileRunningRestartsCleanly() async {
+        let router = AppRouter()
+        let (model, _, _) = makeModel(router: router)
+        model.targetText = "1.1.1.1"
+        model.start()
+        #expect(await waitUntil { model.isBusy })
+        router.open(.traceroute, target: "1.1.1.1", autostart: true)
+        model.consumePendingRequest()
+        #expect(await waitUntil { if case .finished = model.phase { true } else { false } })
+        try? await Task.sleep(for: .milliseconds(150))
+        #expect(model.phase == .finished(.reachedDestination(hops: 4)))
     }
 
-    @Test func asnLookupReusesCoveringPrefix() async {
+    @Test func timedOutReverseLookupIsNotCachedAndRetries() async {
+        let calls = CallCounter()
+        let settings = makeSettings()
+        settings.trace.lookUpASNs = false
+        let model = TraceModel(
+            service: MockTraceService(hops: script, delay: .milliseconds(1)),
+            asnLookup: ASNLookup(api: FakeRIPEstat()), settings: settings, recents: makeRecents(), router: AppRouter(),
+            reverseDNS: { address in
+                guard address == IPAddress("192.168.1.1") else { return .noName }
+                return calls.next() == 1 ? .timedOut : .name("router.lan")
+            })
+        model.targetText = "1.1.1.1"
+        model.start()
+        #expect(await waitUntil { if case .finished = model.phase { true } else { false } })
+        #expect(model.hops[0].hostname == nil)
+        model.start()
+        #expect(await waitUntil { model.hops.first?.hostname == "router.lan" })
+    }
+
+    @Test func asnLookupNeverReusesCoveringPrefix() async {
         let api = FakeRIPEstat()
-        api.infoByIP["141.101.65.1"] = NetworkInfo(prefix: "141.101.64.0/18", originASNs: [13335])
+        api.infoByIP["8.0.0.1"] = NetworkInfo(prefix: "8.0.0.0/12", originASNs: [3356])
+        api.infoByIP["8.8.8.8"] = NetworkInfo(prefix: "8.8.8.0/24", originASNs: [15169])
         let lookup = ASNLookup(api: api)
-        let first = await lookup.lookup(IPAddress("141.101.65.1")!)
-        let second = await lookup.lookup(IPAddress("141.101.70.9")!)
-        #expect(first?.asn == 13335)
-        #expect(second?.asn == 13335)
-        #expect(api.networkInfoCallCount == 1)
+        let first = await lookup.lookup(IPAddress("8.0.0.1")!)
+        let second = await lookup.lookup(IPAddress("8.8.8.8")!)
+        let again = await lookup.lookup(IPAddress("8.8.8.8")!)
+        #expect(first?.asn == 3356)
+        #expect(second?.asn == 15169)
+        #expect(again?.asn == 15169)
+        #expect(api.networkInfoCallCount == 2)   // per IP, cached on repeat
     }
 }

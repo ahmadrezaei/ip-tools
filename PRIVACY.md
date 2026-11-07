@@ -8,7 +8,9 @@ The app talks to exactly three kinds of destinations:
 
 1. **The target you probe.** Ping and traceroute send ICMP packets only to the host or IP address you enter.
 2. **The system DNS resolver**, to turn host names into addresses.
-3. **`https://stat.ripe.net/data/...` (RIPEstat, run by the RIPE NCC).** BGP lookups send the IP address, prefix or AS number you enter. If "Look up AS numbers" is on in Traceroute, the public IP addresses of the hops are sent as well. These requests carry `sourceapp=ahmadrezaei-iptools`, as RIPE NCC asks, and no user identifiers. The Traceroute settings and the About screen say this in plain words, and the lookup can be turned off.
+3. **`https://stat.ripe.net/data/...` (RIPEstat, run by the RIPE NCC).** This is the only place data goes besides the target you probe and your DNS resolver. The host names, IP addresses, prefixes or AS numbers you enter in BGP Map are sent to RIPEstat. If "Look up networks (ASN, via RIPEstat)" is on, the public IP addresses of traceroute hops are sent as well. These requests carry `sourceapp=ahmadrezaei-iptools`, as RIPE NCC asks, and no user identifiers. The setting can be turned off, and the Traceroute settings and the About screen say this in plain words.
+
+Nothing else leaves the device. There is no analytics and no tracking.
 
 ## Stored on your device
 

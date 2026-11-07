@@ -20,7 +20,7 @@ import Testing
         #expect(request.call == "network-info")
         #expect(request.url?.path.hasSuffix("/data/network-info/data.json") == true)
         #expect(request.resource == "1.1.1.1")
-        #expect(request.url?.query?.contains("sourceapp=ip-tools-ios") == true)
+        #expect(request.url?.query?.contains("sourceapp=ahmadrezaei-iptools") == true)
         #expect(request.value(forHTTPHeaderField: "User-Agent")?.hasPrefix("IPTools/1.0") == true)
         #expect(request.timeoutInterval == 30)
     }
@@ -184,3 +184,19 @@ final class Counter: @unchecked Sendable {
     private var value = 0
     func next() -> Int { lock.lock(); defer { lock.unlock() }; value += 1; return value }
 }
+
+@Suite struct ConcurrencyGateTests {
+    @Test func cancelledWaiterIsRemovedAndThrows() async throws {
+        let gate = ConcurrencyGate(limit: 1)
+        try await gate.acquire()
+        let waiter = Task { try await gate.acquire() }
+        while await gate.waitingCount == 0 { await Task.yield() }
+        waiter.cancel()
+        await #expect(throws: CancellationError.self) { try await waiter.value }
+        #expect(await gate.waitingCount == 0)
+        await gate.release()
+        try await gate.acquire()   // slot was not leaked to the cancelled waiter
+        await gate.release()
+    }
+}
+

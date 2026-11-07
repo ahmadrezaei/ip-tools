@@ -182,12 +182,12 @@ private struct FailingAPI: RIPEstatAPI {
         let model = BGPPreviewData.loadedModel()
         let stats = model.stats!
         let hidden = stats.layerMembers[2]!.last!
-        guard case .more? = stats.nodeFor[hidden] else {
+        guard case .more? = stats.nodeFor(hidden) else {
             Issue.record("expected a collapsed AS in layer 2")
             return
         }
         model.selection = .asn(hidden)
-        #expect(model.selectedNodeID == stats.nodeFor[hidden])
+        #expect(model.selectedNodeID == stats.nodeFor(hidden))
         #expect(model.highlight?.nodes.contains(.asn(13335)) == true)
     }
 

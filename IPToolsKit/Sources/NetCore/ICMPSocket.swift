@@ -60,7 +60,15 @@ public final class ICMPSocket: @unchecked Sendable {
         source.resume()
     }
 
-    deinit { close() }
+    deinit {
+        // No queue.sync here: deinit may run on (or be blocked behind) the socket queue.
+        if let source {
+            source.cancel()   // cancel handler closes the descriptor
+        } else if !closed {
+            Darwin.close(fd)
+        }
+        continuation.finish()
+    }
 
     /// Sends one datagram. On the same serial queue the hop limit is set immediately before `sendto`,
     /// so a probe can never go out with the wrong TTL.
@@ -78,24 +86,17 @@ public final class ICMPSocket: @unchecked Sendable {
                 if rc != 0 { throw NetError.sendFailed(errno: errno) }
                 currentHopLimit = hop
             }
-            var storage = sockaddr_storage()
-            let length = Self.fill(&storage, with: to)
             let start = ContinuousClock.now
-            let sent = withUnsafePointer(to: &storage) { ptr in
-                ptr.withMemoryRebound(to: sockaddr.self, capacity: 1) { sa in
-                    bytes.withUnsafeBytes { raw in
-                        sendto(fd, raw.baseAddress, raw.count, 0, sa, length)
-                    }
+            let sent = to.withSockaddr { sa, length in
+                bytes.withUnsafeBytes { raw in
+                    sendto(fd, raw.baseAddress, raw.count, 0, sa, length)
                 }
             }
             if sent < 0 {
                 let e = errno
                 switch e {
-                case ENETUNREACH, EHOSTUNREACH, ENETDOWN, EADDRNOTAVAIL:
-                    if to.scopeLabel != nil && to.scopeLabel != "Loopback" && e == EHOSTUNREACH { throw NetError.localNetworkDenied }
-                    throw NetError.networkUnreachable(family: family)
-                case EPERM, EACCES:
-                    throw NetError.localNetworkDenied
+                case ENETUNREACH, EHOSTUNREACH, ENETDOWN, EADDRNOTAVAIL, EPERM, EACCES:
+                    throw Self.mapSendError(e, target: to)
                 default:
                     throw NetError.sendFailed(errno: e)
                 }
@@ -139,22 +140,15 @@ public final class ICMPSocket: @unchecked Sendable {
         }
     }
 
-    private static func fill(_ storage: inout sockaddr_storage, with address: IPAddress) -> socklen_t {
-        switch address.family {
-        case .v4:
-            var sin = sockaddr_in()
-            sin.sin_len = UInt8(MemoryLayout<sockaddr_in>.size)
-            sin.sin_family = sa_family_t(AF_INET)
-            withUnsafeMutableBytes(of: &sin.sin_addr) { $0.copyBytes(from: address.bytes) }
-            withUnsafeMutableBytes(of: &storage) { $0.copyBytes(from: withUnsafeBytes(of: &sin) { $0 }) }
-            return socklen_t(MemoryLayout<sockaddr_in>.size)
-        case .v6:
-            var sin6 = sockaddr_in6()
-            sin6.sin6_len = UInt8(MemoryLayout<sockaddr_in6>.size)
-            sin6.sin6_family = sa_family_t(AF_INET6)
-            withUnsafeMutableBytes(of: &sin6.sin6_addr) { $0.copyBytes(from: address.bytes) }
-            withUnsafeMutableBytes(of: &storage) { $0.copyBytes(from: withUnsafeBytes(of: &sin6) { $0 }) }
-            return socklen_t(MemoryLayout<sockaddr_in6>.size)
+    /// Local-network-denied only applies to Private / Link-local targets; elsewhere report plain unreachability.
+    static func mapSendError(_ e: Int32, target: IPAddress) -> NetError {
+        let local = target.scopeLabel == "Private" || target.scopeLabel == "Link-local"
+        switch e {
+        case EHOSTUNREACH, EPERM, EACCES:
+            if local { return .localNetworkDenied }
+            return .sendFailed(errno: e)
+        default:
+            return .networkUnreachable(family: target.family)
         }
     }
 

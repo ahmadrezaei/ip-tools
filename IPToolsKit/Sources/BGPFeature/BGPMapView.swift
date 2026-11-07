@@ -9,8 +9,7 @@ import SwiftUI
 public struct BGPMapView: View {
     @Bindable private var model: BGPMapModel
 
-    /// Supplied by the app root (`.environment(networkMonitor)`); without it the view assumes it is online.
-    @Environment(NetworkMonitor.self) private var network: NetworkMonitor?
+    @Environment(\.isOnline) private var isOnline
     @Environment(\.horizontalSizeClass) private var sizeClass
     @Environment(\.accessibilityVoiceOverEnabled) private var voiceOver
     @Environment(\.dynamicTypeSize) private var typeSize
@@ -22,7 +21,6 @@ public struct BGPMapView: View {
     }
 
     private var isRegular: Bool { sizeClass == .regular }
-    private var isOnline: Bool { network?.isOnline ?? true }
     private var isLoading: Bool { if case .loading = model.phase { true } else { false } }
     private var parsedOK: Bool { BGPMapModel.classify(model.targetText) != nil }
 
@@ -34,12 +32,6 @@ public struct BGPMapView: View {
                 mode: .bgp, primaryTitle: "Map", isRunning: isLoading,
                 isEnabled: parsedOK && isOnline, recents: model.recentsStore,
                 onSubmit: { model.map() }, onStop: { model.cancel() })
-            if !model.targetText.isEmpty, !parsedOK, !isLoading {
-                Text("Not a valid IP address, prefix, AS number or hostname")
-                    .font(.footnote).foregroundStyle(.red)
-                    .frame(maxWidth: .infinity, alignment: .leading).padding(.horizontal)
-            }
-            if !isOnline { OfflineBanner() }
             content
         }
         .navigationTitle("BGP Map")
@@ -55,6 +47,7 @@ public struct BGPMapView: View {
         }
         .task { model.consumeRouterRequest() }
         .onChange(of: model.router.selectedTool) { _, tool in if tool == .bgp { model.consumeRouterRequest() } }
+        .onChange(of: model.router.requestTick) { model.consumeRouterRequest() }
         .onChange(of: model.detailsToken) { _, _ in if !isRegular { showDetails = true } }
         .onChange(of: model.selection) { _, new in if new == nil { showDetails = false } }
         .onAppear {

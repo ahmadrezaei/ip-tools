@@ -129,7 +129,7 @@ On iPad (regular width), the stats grid and chart sit side by side above the lis
 | Send error (fatal) | e.g. `ENETUNREACH` on the first send: "No IPv6 route — this network doesn't support IPv6." Run stops. |
 | Local network denied | "Local Network access is off" + button **Open Settings** (`UIApplication.openSettingsURLString`) |
 | Offline | Offline banner, Start disabled |
-| App backgrounded | The run is stopped (`scenePhase != .active`). Header: "Stopped — app moved to background". |
+| App backgrounded | The run is stopped when `scenePhase` becomes `.background` (not on `.inactive`, so system alerts, Control Center and the Local Network prompt don't stop it). Header: "Stopped — app moved to background". |
 
 ### 4.3 Settings (sheet, "Ping Settings")
 | Setting | Options | Default |
@@ -436,7 +436,7 @@ Supports Dark Mode, Dynamic Type, VoiceOver, iPad split view and keyboard shortc
 | 8 | **Local Network privacy prompt** (iOS 14+). It is triggered by sending to local addresses (192.168/16, 10/8, 172.16/12, link-local, ULA, multicast). | `NSLocalNetworkUsageDescription` is set. Pinging a LAN host shows the system prompt once. If denied, `sendto` fails (`EHOSTUNREACH`/`EPERM`) only for local destinations → `NetError.localNetworkDenied` → the UI explains and offers Open Settings. Traceroutes to public hosts don't send to local addresses. Replies *from* the LAN router (hop 1) are received normally. **Verify on device in the first spike.** |
 | 9 | **IPv6 availability.** | "Automatic" uses `AI_ADDRCONFIG`, so v6 is only chosen if the device has a v6 address. `ENETUNREACH`/`EHOSTUNREACH` on the first v6 send → "This network doesn't support IPv6". |
 | 10 | **Reverse DNS can block.** `getnameinfo` is synchronous and can't be cancelled. | Run it on a detached task with `NI_NAMEREQD`, race it against a 2 s timeout, and ignore late results. Concurrency is capped at 4. |
-| 11 | **Backgrounding.** Sockets are suspended. | Models stop runs when `scenePhase` leaves `.active`. No background modes are requested. |
+| 11 | **Backgrounding.** Sockets are suspended. | RootView stops runs when `scenePhase` becomes `.background`. No background modes are requested. |
 | 12 | **Rate limiting and ICMP filtering by routers** ("* * *" hops, unusually high RTT at a hop but not beyond it). | Normal traceroute behaviour. The UI shows it honestly. A help footnote in Settings explains that hops which don't reply are common. |
 | 13 | **Simulator.** | The simulator uses the Mac's network stack. ICMP works, so most testing doesn't need a device. Local-network prompt behaviour differs, so test that on device. |
 

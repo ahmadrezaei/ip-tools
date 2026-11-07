@@ -9,29 +9,68 @@ public struct IPAddress: Hashable, Sendable, Codable, CustomStringConvertible {
     /// 4 or 16 bytes, network order.
     public let bytes: [UInt8]
 
+    /// IPv6 zone (interface index) for link-local addresses; 0 when unscoped.
+    public let scopeID: UInt32
+
     public var family: Family { bytes.count == 4 ? .v4 : .v6 }
 
     /// Accepts IPv4/IPv6 literals, "[v6]" and a trailing "%zone".
     public init?(_ string: String) {
         var s = string.trimmingCharacters(in: .whitespaces)
         if s.hasPrefix("["), s.hasSuffix("]") { s = String(s.dropFirst().dropLast()) }
-        if let pct = s.firstIndex(of: "%") { s = String(s[..<pct]) }
+        var scope: UInt32 = 0
+        if let pct = s.firstIndex(of: "%") {
+            let zone = String(s[s.index(after: pct)...])
+            s = String(s[..<pct])
+            if let n = UInt32(zone) { scope = n } else if !zone.isEmpty { scope = if_nametoindex(zone) }
+        }
         var v4 = in_addr()
         if inet_pton(AF_INET, s, &v4) == 1 {
             self.bytes = withUnsafeBytes(of: &v4) { Array($0) }
+            self.scopeID = 0
             return
         }
         var v6 = in6_addr()
         if inet_pton(AF_INET6, s, &v6) == 1 {
             self.bytes = withUnsafeBytes(of: &v6) { Array($0) }
+            self.scopeID = scope
             return
         }
         return nil
     }
 
-    public init?(bytes: [UInt8]) {
+    public init?(bytes: [UInt8], scopeID: UInt32 = 0) {
         guard bytes.count == 4 || bytes.count == 16 else { return nil }
         self.bytes = bytes
+        self.scopeID = bytes.count == 16 ? scopeID : 0
+    }
+
+    /// Builds a `sockaddr_in`/`sockaddr_in6` on the stack and calls `body` with it.
+    /// `scopeID` overrides the address's own zone when non-zero.
+    func withSockaddr<T>(scopeID override: UInt32 = 0, _ body: (UnsafePointer<sockaddr>, socklen_t) throws -> T) rethrows -> T {
+        switch family {
+        case .v4:
+            var sin = sockaddr_in()
+            sin.sin_len = UInt8(MemoryLayout<sockaddr_in>.size)
+            sin.sin_family = sa_family_t(AF_INET)
+            withUnsafeMutableBytes(of: &sin.sin_addr) { $0.copyBytes(from: bytes) }
+            return try withUnsafePointer(to: &sin) { p in
+                try p.withMemoryRebound(to: sockaddr.self, capacity: 1) {
+                    try body($0, socklen_t(MemoryLayout<sockaddr_in>.size))
+                }
+            }
+        case .v6:
+            var sin6 = sockaddr_in6()
+            sin6.sin6_len = UInt8(MemoryLayout<sockaddr_in6>.size)
+            sin6.sin6_family = sa_family_t(AF_INET6)
+            withUnsafeMutableBytes(of: &sin6.sin6_addr) { $0.copyBytes(from: bytes) }
+            sin6.sin6_scope_id = override != 0 ? override : scopeID
+            return try withUnsafePointer(to: &sin6) { p in
+                try p.withMemoryRebound(to: sockaddr.self, capacity: 1) {
+                    try body($0, socklen_t(MemoryLayout<sockaddr_in6>.size))
+                }
+            }
+        }
     }
 
     public var description: String {

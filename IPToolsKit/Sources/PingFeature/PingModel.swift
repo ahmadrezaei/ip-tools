@@ -29,6 +29,7 @@ import SharedUI
     @ObservationIgnored let router: AppRouter?
     @ObservationIgnored let resolve: ResolveFunction
     @ObservationIgnored private var task: Task<Void, Never>?
+    @ObservationIgnored private var generation = 0
     public var recentsStore: RecentsStore { recents }
 
     public init(service: any PingService, settings: SettingsStore, recents: RecentsStore,
@@ -42,7 +43,7 @@ import SharedUI
     }
 
     public var isBusy: Bool { phase == .resolving || phase == .running }
-    public var hasResults: Bool { !samples.isEmpty }
+    var hasResults: Bool { !samples.isEmpty }
 
     /// Validates, resolves, records the recent and streams samples. Does nothing while a run is active.
     public func start() {
@@ -58,6 +59,8 @@ import SharedUI
         reset()
         runTarget = input
         phase = .resolving
+        generation += 1
+        let gen = generation
         let preference = settings.addressPreference
         let baseOptions = settings.ping
         let resolve = self.resolve
@@ -66,21 +69,23 @@ import SharedUI
                 var options = baseOptions
                 let target = try await resolve(input, preference)
                 try Task.checkCancellation()
-                guard let self else { return }
+                guard let self, self.generation == gen else { return }
                 if target.address.family == .v6 { options.payloadSize = min(options.payloadSize, 1452) }
                 self.resolved = target
                 self.payloadSize = options.payloadSize
                 self.phase = .running
                 self.recents.record(input, tool: .ping)
                 for try await sample in self.service.ping(target, options: options) {
-                    guard self.phase == .running, !Task.isCancelled else { break }
+                    guard !Task.isCancelled, self.generation == gen, self.phase == .running else { break }
                     self.append(sample)
                 }
+                guard !Task.isCancelled, self.generation == gen else { return }
                 if self.phase == .running { self.phase = .finished }
             } catch is CancellationError {
                 // stop() already set the phase
             } catch {
-                self?.handleFailure(error)
+                guard !Task.isCancelled, let self, self.generation == gen else { return }
+                self.handleFailure(error)
             }
         }
     }
@@ -88,6 +93,7 @@ import SharedUI
     /// Stops the current run, keeping the results. `reason` is shown in the header ("app moved to background").
     public func stop(reason: String? = nil) {
         guard isBusy else { return }
+        generation += 1
         task?.cancel()
         task = nil
         phase = phase == .resolving && samples.isEmpty ? .idle : .stopped(reason: reason)
@@ -99,14 +105,6 @@ import SharedUI
     }
 
     public func retry() { start() }
-
-    /// Clears results and returns to the empty state.
-    public func clear() {
-        task?.cancel()
-        task = nil
-        reset()
-        phase = .idle
-    }
 
     /// Opens the BGP map for the probed address (cross-link, auto-starts).
     public func mapInBGP() {
@@ -120,9 +118,13 @@ import SharedUI
     /// Picks up a request handed over by the router (cross-links auto-start, recents only pre-fill).
     public func consumePendingRequest() {
         guard let request = router?.takeRequest(for: .ping) else { return }
-        if isBusy { stop() }
-        targetText = request.target
-        if request.autostart { start() }
+        if request.autostart {
+            if isBusy { stop() }
+            targetText = request.target
+            start()
+        } else if !isBusy {
+            targetText = request.target
+        }
     }
 
     /// Plain-text export (DESIGN §4.6).

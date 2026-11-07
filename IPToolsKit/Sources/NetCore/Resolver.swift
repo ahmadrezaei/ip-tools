@@ -19,6 +19,8 @@ public struct ResolvedTarget: Hashable, Sendable {
     }
 }
 
+public enum ReverseLookupResult: Sendable, Equatable { case name(String), noName, timedOut }
+
 public enum Resolver {
     /// Literal IPs return immediately; hostnames use getaddrinfo(AI_ADDRCONFIG) off the main thread.
     public static func resolve(_ input: String, preference: AddressPreference) async throws -> ResolvedTarget {
@@ -37,13 +39,19 @@ public enum Resolver {
 
     /// getnameinfo(NI_NAMEREQD) raced against `timeout`; nil on failure or timeout.
     public static func reverseName(for address: IPAddress, timeout: Duration = .seconds(2)) async -> String? {
-        await withCheckedContinuation { (continuation: CheckedContinuation<String?, Never>) in
+        if case let .name(n) = await reverseLookup(for: address, timeout: timeout) { return n }
+        return nil
+    }
+
+    /// getnameinfo(NI_NAMEREQD) raced against `timeout`, distinguishing "no PTR" from "timed out".
+    public static func reverseLookup(for address: IPAddress, timeout: Duration = .seconds(5)) async -> ReverseLookupResult {
+        await withCheckedContinuation { (continuation: CheckedContinuation<ReverseLookupResult, Never>) in
             let once = ResumeOnce(continuation)
             DispatchQueue.global(qos: .userInitiated).async {
                 once.resume(with: blockingReverse(address))
             }
             DispatchQueue.global(qos: .utility).asyncAfter(deadline: .now() + timeout.seconds) {
-                once.resume(with: nil)
+                once.resume(with: .timedOut)
             }
         }
     }
@@ -102,46 +110,27 @@ public enum Resolver {
         return .success(out)
     }
 
-    private static func blockingReverse(_ address: IPAddress) -> String? {
-        var storage = sockaddr_storage()
-        let length: socklen_t
-        switch address.family {
-        case .v4:
-            var sin = sockaddr_in()
-            sin.sin_len = UInt8(MemoryLayout<sockaddr_in>.size)
-            sin.sin_family = sa_family_t(AF_INET)
-            withUnsafeMutableBytes(of: &sin.sin_addr) { $0.copyBytes(from: address.bytes) }
-            withUnsafeMutableBytes(of: &storage) { $0.copyBytes(from: withUnsafeBytes(of: &sin) { $0 }) }
-            length = socklen_t(MemoryLayout<sockaddr_in>.size)
-        case .v6:
-            var sin6 = sockaddr_in6()
-            sin6.sin6_len = UInt8(MemoryLayout<sockaddr_in6>.size)
-            sin6.sin6_family = sa_family_t(AF_INET6)
-            withUnsafeMutableBytes(of: &sin6.sin6_addr) { $0.copyBytes(from: address.bytes) }
-            withUnsafeMutableBytes(of: &storage) { $0.copyBytes(from: withUnsafeBytes(of: &sin6) { $0 }) }
-            length = socklen_t(MemoryLayout<sockaddr_in6>.size)
-        }
+    private static func blockingReverse(_ address: IPAddress) -> ReverseLookupResult {
         var buffer = [CChar](repeating: 0, count: Int(NI_MAXHOST))
-        let rc = withUnsafePointer(to: &storage) { ptr in
-            ptr.withMemoryRebound(to: sockaddr.self, capacity: 1) { sa in
-                getnameinfo(sa, length, &buffer, socklen_t(buffer.count), nil, 0, NI_NAMEREQD)
-            }
+        let size = socklen_t(buffer.count)
+        let rc = address.withSockaddr { sa, length in
+            getnameinfo(sa, length, &buffer, size, nil, 0, NI_NAMEREQD)
         }
-        guard rc == 0 else { return nil }
+        guard rc == 0 else { return .noName }
         let name = String(decoding: buffer.prefix { $0 != 0 }.map { UInt8(bitPattern: $0) }, as: UTF8.self)
-        return name.isEmpty ? nil : name
+        return name.isEmpty ? .noName : .name(name)
     }
 }
 
 /// Resumes a continuation exactly once; later calls are ignored.
 private final class ResumeOnce: @unchecked Sendable {
     private let lock = NSLock()
-    private var continuation: CheckedContinuation<String?, Never>?
+    private var continuation: CheckedContinuation<ReverseLookupResult, Never>?
 
-    init(_ continuation: CheckedContinuation<String?, Never>) { self.continuation = continuation }
+    init(_ continuation: CheckedContinuation<ReverseLookupResult, Never>) { self.continuation = continuation }
 
-    func resume(with value: String?) {
-        let c = lock.withLock { () -> CheckedContinuation<String?, Never>? in
+    func resume(with value: ReverseLookupResult) {
+        let c = lock.withLock { () -> CheckedContinuation<ReverseLookupResult, Never>? in
             defer { continuation = nil }
             return continuation
         }

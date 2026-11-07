@@ -29,11 +29,13 @@ struct HopRow: View {
         .accessibilityLabel(accessibilityText)
     }
 
+    @ScaledMetric(relativeTo: .footnote) private var circleSize: CGFloat = 28
+
     private var number: some View {
         Text("\(hop.ttl)")
             .font(.footnote.weight(.semibold).monospacedDigit())
             .foregroundStyle(hop.isDestination ? Color.white : Color.primary)
-            .frame(width: 28, height: 28)
+            .frame(width: circleSize, height: circleSize)
             .background(Circle().fill(hop.isDestination ? Color.green : Color.fieldFill))
     }
 
@@ -145,12 +147,13 @@ struct HopRow: View {
 /// "Hop 7…" with a spinner, shown for the TTL being probed before any answer arrives.
 struct HopPlaceholderRow: View {
     let ttl: Int
+    @ScaledMetric(relativeTo: .footnote) private var circleSize: CGFloat = 28
 
     var body: some View {
         HStack(spacing: 12) {
             Text("\(ttl)")
                 .font(.footnote.weight(.semibold).monospacedDigit())
-                .frame(width: 28, height: 28)
+                .frame(width: circleSize, height: circleSize)
                 .background(Circle().fill(Color.fieldFill))
             Text("Hop \(ttl)…").font(.subheadline).foregroundStyle(.secondary)
             Spacer()

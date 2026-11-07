@@ -97,12 +97,7 @@ public struct TargetInputBar: View {
                 .accessibilityIdentifier("targetField")
             if !isRunning {
                 if text.isEmpty {
-                    Button { if let pasted = Clipboard.paste() { text = pasted.trimmingCharacters(in: .whitespacesAndNewlines) } } label: {
-                        Image(systemName: "doc.on.clipboard")
-                    }
-                    .buttonStyle(.plain)
-                    .foregroundStyle(.secondary)
-                    .accessibilityLabel("Paste")
+                    PasteFieldButton { text = $0 }
                 } else {
                     Button { text = ""; isFocused = true } label: {
                         Image(systemName: "xmark.circle.fill")
