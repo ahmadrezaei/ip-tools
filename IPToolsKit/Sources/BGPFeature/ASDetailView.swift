@@ -233,7 +233,13 @@ struct OnYourRouteSection: View {
             Text(roleText).font(.subheadline.weight(.medium))
             HStack(alignment: .top, spacing: 10) {
                 if let hops = RouteText.hops(node.ttls) {
-                    tile(String(localized: "Hops"), hops, detail: node.role == .you ? String(localized: "local network and beyond") : nil)
+                    tile(String(localized: "Hops"), hops, detail: {
+                        switch RouteText.localHops(node) {
+                        case .none: nil
+                        case .all: String(localized: "local network")
+                        case .mixed: String(localized: "local network and beyond")
+                        }
+                    }())
                 }
                 if let rtt = RouteText.rtt(node.rttRange) {
                     tile(String(localized: "Response time"), rtt, detail: String(localized: "inside this network"))
@@ -260,14 +266,7 @@ struct OnYourRouteSection: View {
         .frame(maxWidth: .infinity, alignment: .leading)
     }
 
-    private var roleText: String {
-        switch node.role {
-        case .you: String(localized: "Your network")
-        case .transit: String(localized: "Transit network")
-        case .destination: String(localized: "Destination")
-        case .youAndDestination: String(localized: "Your network and the destination")
-        }
-    }
+    private var roleText: String { RouteText.role(node.role, .detail) }
 
     private func tile(_ title: String, _ value: String, detail: String?) -> some View {
         VStack(alignment: .leading, spacing: 2) {

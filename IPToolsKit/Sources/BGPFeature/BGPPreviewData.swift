@@ -222,7 +222,7 @@ extension BGPMapModel {
         BGPPreviewData.model { model in
             let (result, layout) = BGPPreviewData.result(prefix: "8.8.8.0/24")
             model.targetText = "8.8.8.8"
-            model.myNetwork = mine
+            model.route.setMyNetwork(mine)
             model.installPreview(result: result, layout: layout)
             model.view = view
             model.route.installPreview(phase: phase, chain: chain, context: context(), names: names, myNetwork: mine,

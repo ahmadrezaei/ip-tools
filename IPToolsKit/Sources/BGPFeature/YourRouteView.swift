@@ -37,8 +37,8 @@ struct YourRouteView: View {
                 .background {
                     GeometryReader { proxy in
                         Color.clear
-                            .onAppear { availableWidth = proxy.size.width - 32 }
-                            .onChange(of: proxy.size.width) { _, width in availableWidth = width - 32 }
+                            .onAppear { availableWidth = chainWidth(proxy.size.width) }
+                            .onChange(of: proxy.size.width) { _, width in availableWidth = chainWidth(width) }
                     }
                 }
         }
@@ -46,6 +46,8 @@ struct YourRouteView: View {
             showPrivacyNote = !route.privacyNoteSeen
         }
     }
+
+    private func chainWidth(_ width: CGFloat) -> CGFloat { min(width - 32, isRegular ? 900 : 640) }
 
     @ViewBuilder private var content: some View {
         switch route.phase {

@@ -11,6 +11,8 @@ struct AllRoutesSummaryCard: View {
     var myNetwork: MyNetwork?
     @Binding var mode: BGPMapModel.DisplayMode
     var showUpdated = false
+    /// Compact width: the chips row is dropped to keep the card short.
+    var compact = false
     var onSeeYourRoute: () -> Void = {}
 
     private var originName: String? { BGPText.originName(result) }
@@ -34,7 +36,7 @@ struct AllRoutesSummaryCard: View {
                 .buttonStyle(.plain)
                 .accessibilityLabel(mode == .graph ? Text("Show as list") : Text("Show as graph"))
             }
-            chips
+            if !compact { chips }
         }
         .padding(12)
         .frame(maxWidth: .infinity, alignment: .leading)
@@ -46,14 +48,14 @@ struct AllRoutesSummaryCard: View {
     @ViewBuilder private var directLine: some View {
         let percent = Int((summary.directFraction * 100).rounded())
         let target = originName ?? String(localized: "the destination")
-        let handoffs = summary.handoffs.map { asn -> String in
-            "**AS\(asn)" + (BGPText.shortName(result.holder(of: asn)).map { " \($0)" } ?? "") + "**"
+        let handoffs = summary.handoffs.map { asn -> Text in
+            let name = BGPText.shortName(result.holder(of: asn)).map { " \($0)" } ?? ""
+            return Text(verbatim: "AS\(asn)\(name)").bold()
         }
-        if let first = handoffs.first {
-            let others = handoffs.count > 1
-                ? "\(first) " + String(localized: "or") + " \(handoffs[1])"
-                : first
-            Text("**\(percent)%** connect to \(target) directly. Most others pass through \(others).")
+        if handoffs.count > 1 {
+            Text("**\(percent)%** connect to \(target) directly. Most others pass through \(handoffs[0]) or \(handoffs[1]).")
+        } else if let first = handoffs.first {
+            Text("**\(percent)%** connect to \(target) directly. Most others pass through \(first).")
         } else {
             Text("**\(percent)%** connect to \(target) directly.")
         }
@@ -66,12 +68,11 @@ struct AllRoutesSummaryCard: View {
             if count > 0 {
                 Text("**Your network** (\(label)) is in \(count) routes, highlighted below")
             } else {
-                HStack(spacing: 4) {
-                    Text("Your network (\(label)) isn't in these routes.")
-                    Button(action: onSeeYourRoute) { Text("**See Your route ›**") }
-                        .buttonStyle(.plain)
-                        .foregroundStyle(Color.accentColor)
-                }
+                Text("Your network (\(label)) isn't in these routes. [**See Your route ›**](iptools-internal://your-route)")
+                    .environment(\.openURL, OpenURLAction { _ in
+                        onSeeYourRoute()
+                        return .handled
+                    })
             }
         }
     }

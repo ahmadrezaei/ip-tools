@@ -18,9 +18,10 @@
 </p>
 
 <p align="center">
-  <img src="docs/screenshots/iphone-ping.png" width="230" alt="Ping screen: live round-trip time chart with min, avg, max, jitter and packet loss">
-  <img src="docs/screenshots/iphone-traceroute.png" width="230" alt="Traceroute screen: every hop with response times and the ASN of each router">
-  <img src="docs/screenshots/iphone-bgp-map.png" width="230" alt="BGP map: graph of AS paths from RIPE RIS collectors toward the origin AS">
+  <img src="docs/screenshots/iphone-ping.png" width="200" alt="Ping screen: live round-trip time chart with min, avg, max, jitter and packet loss">
+  <img src="docs/screenshots/iphone-traceroute.png" width="200" alt="Traceroute screen: every hop with response times and the ASN of each router">
+  <img src="docs/screenshots/iphone-your-route.png" width="200" alt="Your route: the chain of networks your traffic crosses, from your ISP through transit to the destination AS">
+  <img src="docs/screenshots/iphone-bgp-map.png" width="200" alt="All routes BGP map: summary and graph of AS paths from RIPE RIS collectors toward the origin AS">
 </p>
 
 ---

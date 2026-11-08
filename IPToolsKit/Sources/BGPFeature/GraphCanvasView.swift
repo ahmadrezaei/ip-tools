@@ -87,6 +87,7 @@ struct GraphCanvasView: View {
             userMoved = false
             applyInitial(animated: false)
         }
+        .onChange(of: model.fitToken) { _, _ in fit(animated: true) }
         .sensoryFeedback(.selection, trigger: model.selection)
     }
 
@@ -131,19 +132,8 @@ struct GraphCanvasView: View {
         }
         .frame(width: size.width, height: size.height, alignment: .topLeading)
         .contentShape(Rectangle())
-        .simultaneousGesture(pan)
+        .highPriorityGesture(pan)
         .simultaneousGesture(magnify)
-        .overlay(alignment: .bottomTrailing) {
-            Button { fit(animated: true) } label: {
-                Image(systemName: "arrow.up.left.and.arrow.down.right")
-                    .font(.body.weight(.semibold))
-                    .padding(10)
-                    .background(.regularMaterial, in: Circle())
-            }
-            .buttonStyle(.plain)
-            .accessibilityLabel(Text("Fit graph to screen"))
-            .padding(12)
-        }
         .accessibilityElement(children: .contain)
         .accessibilityLabel(String(localized: "All routes worldwide: AS path graph, \(nodes.count) networks, \(layout.columnHeaders.count) columns"))
         .accessibilityAction(named: Text("Show as list")) { model.displayMode = .list }
@@ -194,7 +184,11 @@ struct GraphCanvasView: View {
 
     private func applyInitial(animated: Bool) {
         guard viewSize.width > 0, contentSize.width > 0 else { return }
-        set(ZoomPanState.initial(content: contentSize, in: viewSize), animated: animated)
+        var originMidY: CGFloat?
+        if let layout = model.layout, let origin = model.result?.graph.origins.first {
+            originMidY = layout.frames[.asn(origin)]?.midY
+        }
+        set(ZoomPanState.initial(content: contentSize, in: viewSize, originMidY: originMidY), animated: animated)
     }
 
     private func fit(animated: Bool) {

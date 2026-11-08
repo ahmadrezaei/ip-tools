@@ -26,6 +26,12 @@ struct RouteContext {
 
 struct RouteAnnouncement: Equatable { let id: Int; let text: String }
 
+/// The copy-worthy ends of a trace: rule c ("Reached Google's network at hop 8") and rule d (target silent).
+enum RouteOutcome: Equatable {
+    case reachedOrigin(asn: UInt32, hop: Int)
+    case targetSilent(asn: UInt32, hop: Int)
+}
+
 @MainActor @Observable public final class YourRouteModel {
     public enum Phase: Equatable {
         case idle, locating, measuring(ttl: Int), done, partial(String), stopped(String),
@@ -39,6 +45,8 @@ struct RouteAnnouncement: Equatable { let id: Int; let text: String }
     private(set) var context: RouteContext?
     private(set) var names: [UInt32: String] = [:]
     private(set) var announcement: RouteAnnouncement?
+    /// How an early-stopped trace ended (DESIGN 6.11.5 rules c and d).
+    private(set) var outcome: RouteOutcome?
     private(set) var privacyNoteSeen = false
 
     @ObservationIgnored private var api: (any RIPEstatAPI)?
@@ -46,13 +54,18 @@ struct RouteAnnouncement: Equatable { let id: Int; let text: String }
     @ObservationIgnored private var settings: SettingsStore?
     @ObservationIgnored var now: @Sendable () -> Date = { Date() }
     @ObservationIgnored private var task: Task<Void, Never>?
-    @ObservationIgnored private var namesTask: Task<Void, Never>?
+    var measurementTask: Task<Void, Never>? { task }
+    @ObservationIgnored private var namesDebounce: Task<Void, Never>?
+    @ObservationIgnored private var namesFetches: [Task<Void, Never>] = []
     @ObservationIgnored private var requestedNames: Set<UInt32> = []
+    @ObservationIgnored private var failedNames: Set<UInt32> = []
     @ObservationIgnored private(set) var hops: [ChainHop] = []
     @ObservationIgnored private var startedAt = Date()
     @ObservationIgnored private var lastAnnouncementAt: Date?
     @ObservationIgnored private var runID = 0
     @ObservationIgnored private var announcedASNs: Set<UInt32> = []
+    /// True while the app is in the background: no new measurement may start.
+    @ObservationIgnored var isSuspended = false
 
     static let snapshotMaxAge: TimeInterval = 10 * 60
 
@@ -74,7 +87,12 @@ struct RouteAnnouncement: Equatable { let id: Int; let text: String }
     func reset() {
         runID += 1
         task?.cancel()
-        namesTask?.cancel()
+        namesDebounce?.cancel()
+        for fetch in namesFetches { fetch.cancel() }
+        namesFetches = []
+        requestedNames = []
+        failedNames = []
+        outcome = nil
         task = nil
         phase = .idle
         chain = nil
@@ -101,16 +119,32 @@ struct RouteAnnouncement: Equatable { let id: Int; let text: String }
         reset()
         self.context = context
         setMyNetwork(myNetwork)
+        var snapshotNeedsLookups = false
         if let snapshot = context.snapshot, let address = context.address, snapshot.target.address == address,
            now().timeIntervalSince(snapshot.finishedAt) <= Self.snapshotMaxAge {
-            useSnapshot(snapshot, context)
-            return
+            let snapshotHops = Self.hops(from: snapshot)
+            snapshotNeedsLookups = snapshotHops.contains { $0.kind == .unknownNetwork }
+            if !snapshotNeedsLookups {
+                hops = snapshotHops
+                finish(source: .traceroute(handedOver: true, measuredAt: snapshot.finishedAt), stitch: true)
+                return
+            }
+            if lookupsEnabled, let api {
+                resolveSnapshot(snapshot, hops: snapshotHops, api: api)
+                return
+            }
         }
         if let asn = myASN,
            let bgp = ASChainBuilder.fromBGP(context.paths, myASN: asn, origins: context.origins) {
             chain = bgp
             phase = .done
             requestNames()
+            return
+        }
+        if snapshotNeedsLookups {
+            // Lookups are off and the handed-over trace has no networks: nothing to build from.
+            phase = .lookupsOff
+            chain = nil
             return
         }
         startMeasuring()
@@ -147,8 +181,8 @@ struct RouteAnnouncement: Equatable { let id: Int; let text: String }
 
     // MARK: Sources
 
-    private func useSnapshot(_ snapshot: TraceSnapshot, _ context: RouteContext) {
-        hops = snapshot.hops.map { hop in
+    private static func hops(from snapshot: TraceSnapshot) -> [ChainHop] {
+        snapshot.hops.map { hop in
             let kind: ChainHop.Kind
             if let address = hop.address {
                 if !address.isPubliclyRoutable { kind = .privateAddress }
@@ -160,11 +194,47 @@ struct RouteAnnouncement: Equatable { let id: Int; let text: String }
             return ChainHop(ttl: hop.ttl, kind: kind, address: hop.address?.description, hostname: hop.hostname,
                             rtts: hop.rtts, reachedTarget: hop.reachedTarget)
         }
-        finish(source: .traceroute(handedOver: true, measuredAt: snapshot.finishedAt), stitch: true)
+    }
+
+    /// A handed-over trace without networks: look up each public hop, then finish like a measured one.
+    private func resolveSnapshot(_ snapshot: TraceSnapshot, hops snapshotHops: [ChainHop], api: any RIPEstatAPI) {
+        hops = snapshotHops
+        startedAt = now()
+        chain = placeholderChain()
+        phase = .measuring(ttl: 0)
+        let id = runID
+        let addresses = Array(Set(snapshotHops.filter { $0.kind == .unknownNetwork }.compactMap(\.address))).sorted()
+        task = Task { [weak self] in
+            let found = await withTaskGroup(of: (String, UInt32?).self) { group in
+                for address in addresses {
+                    group.addTask {
+                        if case let .found(asn) = await RouteMeasurer.lookup(address, api: api) { return (address, asn) }
+                        return (address, nil)
+                    }
+                }
+                var result: [String: UInt32] = [:]
+                for await (address, asn) in group { if let asn { result[address] = asn } }
+                return result
+            }
+            guard let self, !Task.isCancelled, id == self.runID else { return }
+            self.hops = self.hops.map { hop in
+                guard hop.kind == .unknownNetwork, let address = hop.address, let asn = found[address] else { return hop }
+                return ChainHop(ttl: hop.ttl, kind: .network(asn), address: hop.address, hostname: hop.hostname,
+                                rtts: hop.rtts, reachedTarget: hop.reachedTarget)
+            }
+            self.finish(source: .traceroute(handedOver: true, measuredAt: snapshot.finishedAt), stitch: true)
+        }
     }
 
     private func startMeasuring() {
         guard let context else { return }
+        if isSuspended {
+            let title = String(localized: "Stopped: app moved to background")
+            chain = nil
+            phase = .stopped(title)
+            announce(title, force: true)
+            return
+        }
         guard let service, let api else { phase = .unavailable; chain = nil; return }
         guard lookupsEnabled else { phase = .lookupsOff; chain = nil; return }
         guard let probe = probeTarget(context) else {
@@ -172,6 +242,7 @@ struct RouteAnnouncement: Equatable { let id: Int; let text: String }
             return
         }
         hops = []
+        outcome = nil
         announcedASNs = []
         startedAt = now()
         chain = placeholderChain()
@@ -208,8 +279,13 @@ struct RouteAnnouncement: Equatable { let id: Int; let text: String }
                let asn = node.asn, announcedASNs.insert(asn).inserted {
                 announce(String(localized: "\(shortName(asn) ?? "AS \(asn)") found at hop \(node.ttls?.lowerBound ?? ttl)"))
             }
-        case .finished:
+        case let .finished(reachedOrigin, stop):
             finish(source: .traceroute(handedOver: false, measuredAt: now()), stitch: true)
+            if reachedOrigin, stop != .traceEnded, let context,
+               let hop = hops.first(where: { if case let .network(asn) = $0.kind { context.origins.contains(asn) } else { false } }),
+               case let .network(asn) = hop.kind {
+                outcome = stop == .originSilent ? .targetSilent(asn: asn, hop: hop.ttl) : .reachedOrigin(asn: asn, hop: hop.ttl)
+            }
         case let .failed(error):
             phase = .failed(BGPFailure.from(error).message(for: error))
         }
@@ -226,12 +302,12 @@ struct RouteAnnouncement: Equatable { let id: Int; let text: String }
     }
 
     private func finalPhase(for chain: ASChain) -> Phase {
-        let hasNetwork = hops.contains { if case .network = $0.kind { true } else { false } }
         switch chain.completion {
         case .complete, .inProgress:
             return .done
         case .stitched, .gap:
-            if !hasNetwork { return .partial(String(localized: "No router on the way answered")) }
+            if !publicHopAnswered { return .partial(String(localized: "No router on the way answered")) }
+            if !hasNetworkHop { return .partial(String(localized: "Couldn't look up the networks on the way.")) }
             let hop = chain.lastTTL ?? 0
             if chain.completion == .stitched {
                 let last = chain.nodes.last { $0.provenance == .measured }
@@ -241,6 +317,13 @@ struct RouteAnnouncement: Equatable { let id: Int; let text: String }
             return .partial(String(localized: "Traceroute couldn't see past hop \(hop)"))
         }
     }
+
+    /// A router with a public address answered (whether or not its network is known).
+    var publicHopAnswered: Bool {
+        hops.contains { if case .network = $0.kind { true } else if case .unknownNetwork = $0.kind { true } else { false } }
+    }
+
+    var hasNetworkHop: Bool { hops.contains { if case .network = $0.kind { true } else { false } } }
 
     private func placeholderChain() -> ASChain? {
         guard let context, let origin = context.origins.first else { return nil }
@@ -272,22 +355,45 @@ struct RouteAnnouncement: Equatable { let id: Int; let text: String }
     }
 
     /// Debounced (500 ms) bulk `as-names` for the networks on the chain.
-    private func requestNames() {
-        guard let api else { return }
+    /// A new request only restarts the debounce; a fetch already in flight is never cancelled.
+    func requestNames() {
+        guard api != nil, !missingNames().isEmpty else { return }
+        namesDebounce?.cancel()
+        namesDebounce = Task { [weak self] in
+            try? await Task.sleep(for: .milliseconds(500))
+            guard !Task.isCancelled, let self else { return }
+            self.fetchNames()
+        }
+    }
+
+    private func missingNames() -> [UInt32] {
         var wanted = Set(chain?.asnSequence ?? [])
         if let asn = myASN { wanted.insert(asn) }
         wanted.formUnion(context?.origins ?? [])
-        let missing = wanted.subtracting(names.keys).subtracting(requestedNames)
-        guard !missing.isEmpty else { return }
-        namesTask?.cancel()
-        namesTask = Task { [weak self] in
-            try? await Task.sleep(for: .milliseconds(500))
-            guard !Task.isCancelled, let self else { return }
-            let list = missing.subtracting(self.names.keys).sorted()
-            guard !list.isEmpty else { return }
-            self.requestedNames.formUnion(list)
-            if let fetched = try? await api.asNames(list), !Task.isCancelled { self.ingestNames(fetched) }
+        return wanted.subtracting(names.keys).subtracting(requestedNames).sorted()
+    }
+
+    private func fetchNames() {
+        guard let api else { return }
+        let list = missingNames()
+        guard !list.isEmpty else { return }
+        requestedNames.formUnion(list)
+        let id = runID
+        let fetch = Task { [weak self] in
+            let fetched = try? await api.asNames(list)
+            guard let self, id == self.runID else { return }
+            if let fetched {
+                self.ingestNames(fetched)
+            } else {
+                // One retry per name: forget it so the next request asks again.
+                let retry = list.filter { !self.failedNames.contains($0) }
+                self.failedNames.formUnion(list)
+                self.requestedNames.subtract(retry)
+                if !retry.isEmpty { self.requestNames() }
+            }
         }
+        namesFetches.removeAll { $0.isCancelled }
+        namesFetches.append(fetch)
     }
 
     // MARK: Announcements (VoiceOver)

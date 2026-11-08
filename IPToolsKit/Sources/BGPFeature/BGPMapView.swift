@@ -138,10 +138,22 @@ public struct BGPMapView: View {
     }
 
     private var allRoutes: some View {
-        VStack(spacing: 8) {
+        ViewThatFits(in: .vertical) {
+            allRoutesContent(scrolling: false)
+            ScrollView {
+                allRoutesContent(scrolling: true)
+            }
+            .scrollBounceBehavior(.basedOnSize)
+        }
+    }
+
+    /// `scrolling`: the content is taller than the screen, so the canvas keeps its minimum height and the page scrolls.
+    private func allRoutesContent(scrolling: Bool) -> some View {
+        let canvasMin: CGFloat = isRegular ? 360 : 300
+        return VStack(spacing: 8) {
             if let result = model.result, let summary = model.summary {
                 AllRoutesSummaryCard(result: result, summary: summary, myNetwork: model.myNetwork, mode: $model.displayMode,
-                                     showUpdated: isRegular) { model.view = .yourRoute }
+                                     showUpdated: isRegular, compact: !isRegular) { model.view = .yourRoute }
             }
             if model.displayMode == .graph, typeSize >= .accessibility1 {
                 Label("Larger text works best in List view", systemImage: "list.bullet")
@@ -152,11 +164,14 @@ public struct BGPMapView: View {
                 case .graph:
                     VStack(spacing: 6) {
                         GraphCanvasView(model: model)
-                        GraphLegend(showsYou: model.myASN != nil) { showLegend = true }
+                            .frame(minHeight: canvasMin)
+                            .layoutPriority(1)
+                        GraphLegend(showsYou: model.myASN != nil, onFit: { model.requestFit() }) { showLegend = true }
                     }
                     .padding(.horizontal).padding(.bottom, 8)
                 case .list:
                     BGPListView(model: model)
+                        .frame(minHeight: scrolling ? 360 : 0)
                 }
                 if !isRegular, let selection = model.selection, let result = model.result,
                    let summary = model.stats?.summary(for: selection, graph: result.graph) {

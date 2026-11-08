@@ -303,4 +303,29 @@ import SharedUI
         #expect(trace?.hops.last?.reachedTarget == true)
         #expect(trace?.hops.first?.reachedTarget == false)
     }
+
+    @Test func mapHopOnSecondEcmpAddressUsesThatAddressAndDropsUnknownASN() async {
+        let alt = IPAddress("141.101.65.2")!
+        let router = AppRouter()
+        let api = cloudflareAPI()
+        let ecmpScript: [[ProbeResult]] = [
+            [.timeExceeded(from: hop1, rtt: 0.002), .timeExceeded(from: hop1, rtt: 0.002), .timeExceeded(from: hop1, rtt: 0.003)],
+            [.timeExceeded(from: hop3, rtt: 0.021), .timeExceeded(from: alt, rtt: 0.020), .timeExceeded(from: hop3, rtt: 0.022)],
+            [.echoReply(from: dest, rtt: 0.024), .echoReply(from: dest, rtt: 0.023), .echoReply(from: dest, rtt: 0.025)],
+        ]
+        let model = TraceModel(
+            service: MockTraceService(hops: ecmpScript, delay: .milliseconds(1)),
+            asnLookup: ASNLookup(api: api), settings: makeSettings(), recents: makeRecents(), router: router,
+            reverseDNS: { _ in .noName })
+        model.targetText = "1.1.1.1"
+        model.start()
+        #expect(await waitUntil { if case .finished = model.phase { true } else { false } })
+        #expect(model.hops[1].addresses.contains(alt))
+        model.mapHop(alt)
+        let trace = router.takeRequest(for: .bgp)?.trace
+        #expect(trace?.target.address == alt)
+        #expect(trace?.hops.last?.address == alt)
+        #expect(trace?.hops.last?.asn == nil)
+        #expect(trace?.hops.last?.reachedTarget == true)
+    }
 }

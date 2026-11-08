@@ -14,6 +14,26 @@ enum RouteText {
         return range.lowerBound == range.upperBound ? "\(range.lowerBound)" : "\(range.lowerBound)–\(range.upperBound)"
     }
 
+    /// How many of a You node's answered hops are private addresses, and whether that is all of them.
+    enum LocalHops: Equatable { case none, all, mixed(Int) }
+
+    static func localHops(_ node: ASChain.Node) -> LocalHops {
+        guard node.role == .you || node.role == .youAndDestination else { return .none }
+        let answered = node.hops.filter { $0.kind != .silent }
+        let local = answered.filter { $0.kind == .privateAddress }.count
+        if local == 0 { return .none }
+        return local == answered.count ? .all : .mixed(local)
+    }
+
+    /// Text appended to the hop line ("(local)" or "4 local"), nil when no hop is private.
+    static func localHopsSuffix(_ node: ASChain.Node) -> String? {
+        switch localHops(node) {
+        case .none: return nil
+        case .all: return String(localized: "(local)")
+        case let .mixed(count): return String(localized: "\(count) local")
+        }
+    }
+
     static func rtt(_ range: ClosedRange<TimeInterval>?) -> String? {
         guard let range else { return nil }
         let low = Int((range.lowerBound * 1000).rounded()), high = Int((range.upperBound * 1000).rounded())
@@ -27,6 +47,23 @@ enum RouteText {
         formatter.dateFormat = "yyyy-MM-dd HH:mm 'UTC'"
         return formatter
     }()
+
+    enum RoleStyle { case detail, row(prefix: String, lastSeen: Bool), spoken }
+
+    /// One wording for a node's role, in the three places that show it.
+    static func role(_ role: ASChain.Node.Role, _ style: RoleStyle) -> String {
+        switch (role, style) {
+        case (.you, _): return String(localized: "Your network")
+        case (.transit, let .row(_, lastSeen)):
+            return lastSeen ? String(localized: "Transit network · last network seen") : String(localized: "Transit network")
+        case (.transit, _): return String(localized: "Transit network")
+        case (.destination, let .row(prefix, _)): return String(localized: "Destination · announces \(prefix)")
+        case (.destination, _): return String(localized: "Destination")
+        case (.youAndDestination, let .row(prefix, _)): return String(localized: "Your network · announces \(prefix)")
+        case (.youAndDestination, .detail): return String(localized: "Your network and the destination")
+        case (.youAndDestination, .spoken): return String(localized: "Your network, destination")
+        }
+    }
 
     static func localTime(_ date: Date) -> String {
         date.formatted(date: .omitted, time: .shortened)
@@ -47,10 +84,6 @@ extension YourRouteModel {
     }
 
     var targetLabel: String { context?.label ?? "" }
-
-    var hasMeasuredNetwork: Bool {
-        chain?.nodes.contains { $0.provenance == .measured && $0.asn != nil && $0.role != .you } ?? false
-    }
 
     private func label(_ asn: UInt32?) -> String {
         guard let asn else { return String(localized: "your network") }
@@ -76,6 +109,14 @@ extension YourRouteModel {
             if isBGPSourced, chain.nodes.count == 2 {
                 return String(localized: "Your network connects directly to \(label(chain.nodes.last?.asn))")
             }
+            switch outcome {
+            case let .reachedOrigin(asn, hop)?:
+                return String(localized: "Reached \(label(asn))'s network at hop \(hop)")
+            case let .targetSilent(asn, _)?:
+                return String(localized: "Reached \(label(asn))'s network. \(targetLabel) itself didn't answer.")
+            case nil:
+                break
+            }
             return String(localized: "\(chain.nodes.count) networks between you and \(targetLabel)")
         }
     }
@@ -100,10 +141,15 @@ extension YourRouteModel {
         case .partial:
             if chain.completion == .stitched {
                 let from = label(chain.nodes.last { $0.provenance == .measured }?.asn)
-                let count = chain.nodes.first { $0.provenance == .bgp }?.routeCount ?? 0
-                return String(localized: "The rest is the most common BGP route from \(from) (\(count) of \(context?.paths.count ?? 0) routes).")
+                let count = chain.stitchedRouteCount ?? chain.nodes.first { $0.provenance == .bgp }?.routeCount ?? 0
+                let total = context?.paths.count ?? 0
+                if chain.stitchedRank == 1 {
+                    return String(localized: "The rest is the most common BGP route from \(from) (\(count) of \(total) routes).")
+                }
+                return String(localized: "The rest is a common BGP route from \(from) (\(count) of \(total) routes).")
             }
-            if !hasMeasuredNetwork { return String(localized: "Some networks block traceroute.") }
+            if !publicHopAnswered { return String(localized: "Some networks block traceroute.") }
+            if !hasNetworkHop { return String(localized: "Try again in a moment.") }
             let from = label(chain.nodes.last { $0.provenance == .measured && $0.asn != nil }?.asn)
             let to = label(chain.nodes.last?.asn)
             return String(localized: "The networks between \(from) and \(to) are unknown.")
@@ -211,22 +257,18 @@ extension YourRouteModel {
         var tail = ""
         switch (chain.source, chain.completion) {
         case (.bgp, _): break
+        case (_, .inProgress):
+            if case let .measuring(ttl) = phase, ttl > 0 { tail = " " + String(localized: "Measuring, hop \(ttl).") }
         case (_, .complete): tail = " " + String(localized: "\(hopCount) hops.")
         case (_, .stitched): tail = " " + String(localized: "Traceroute stopped at hop \(chain.lastTTL ?? 0). The rest is from BGP.")
-        default: tail = " " + String(localized: "Traceroute stopped at hop \(chain.lastTTL ?? 0).")
+        case (_, .gap): tail = " " + String(localized: "Traceroute stopped at hop \(chain.lastTTL ?? 0).")
         }
         return head + phrase + tail
     }
 
     /// Spoken description of one node (the node is a button).
     func accessibilityLabel(for node: ASChain.Node) -> String {
-        var parts: [String]
-        switch node.role {
-        case .you: parts = [String(localized: "Your network")]
-        case .transit: parts = [String(localized: "Transit network")]
-        case .destination: parts = [String(localized: "Destination")]
-        case .youAndDestination: parts = [String(localized: "Your network, destination")]
-        }
+        var parts = [RouteText.role(node.role, .spoken)]
         if let asn = node.asn {
             parts.append(RouteText.spokenASN(asn))
             if let name = shortName(asn) { parts.append(name) }

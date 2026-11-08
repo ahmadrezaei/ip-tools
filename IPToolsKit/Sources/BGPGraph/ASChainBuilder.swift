@@ -22,9 +22,22 @@ public enum ASChainBuilder {
     /// in it, local ones included).
     public static func fromTrace(_ hops: [ChainHop], myASN: UInt32?, origins: [UInt32], finished: Bool,
                                  source: ASChain.Source) -> ASChain {
-        let ordered = hops.enumerated().sorted { a, b in
+        var ordered = hops.enumerated().sorted { a, b in
             a.element.ttl != b.element.ttl ? a.element.ttl < b.element.ttl : a.offset < b.offset
         }.map(\.element)
+        // The probe target is inside the mapped prefix by construction, so a hop that reached it belongs to the
+        // origin network even when its own ASN lookup failed (or it is unknown/silent).
+        if let origin = origins.first {
+            ordered = ordered.map { hop in
+                guard hop.reachedTarget else { return hop }
+                switch hop.kind {
+                case .unknownNetwork, .silent:
+                    return ChainHop(ttl: hop.ttl, kind: .network(origin), address: hop.address,
+                                    hostname: hop.hostname, rtts: hop.rtts, reachedTarget: true)
+                default: return hop
+                }
+            }
+        }
         let originSet = Set(origins)
 
         // Rule 2: the leading block (everything before the first network hop) belongs to You.
@@ -55,6 +68,14 @@ public enum ASChainBuilder {
                 segments.append(Segment(asn: asn, hops: [hop], droppedBefore: pending.count, isYou: false))
             }
             pending = []
+        }
+
+        // If an origin AS appears mid-chain, the last such segment is the destination and anything measured
+        // after it is dropped. Appending an expected destination instead would give two nodes the same id
+        // ("AS<origin>"), and reaching the origin already completes the route per 6.11.6 rule 6.
+        if let k = segments.indices.dropFirst().last(where: { segments[$0].asn.map(originSet.contains) ?? false }),
+           k < segments.count - 1 {
+            segments.removeSubrange((k + 1)...)
         }
 
         let skipped = segments.reduce(0) { $0 + $1.droppedBefore }
@@ -153,17 +174,18 @@ public enum ASChainBuilder {
 
     /// DESIGN 6.11.7. Returns `chain` unchanged unless completion == .gap and a suffix exists.
     public static func stitch(_ chain: ASChain, cleanedPaths: [ObservedPath], origins: [UInt32]) -> ASChain {
-        guard chain.completion == .gap,
+        guard chain.completion == .gap, !chain.reachedTarget,
               let measuredIndex = chain.nodes.lastIndex(where: { $0.provenance == .measured }),
               let x = chain.nodes[measuredIndex].asn else { return chain }
         let used = Set(chain.nodes[...measuredIndex].compactMap(\.asn))
         let originSet = Set(origins)
-        let candidate = rankedSuffixes(cleanedPaths, from: x).first { suffix in
+        let eligible = rankedSuffixes(cleanedPaths, from: x).filter { suffix in
             suffix.asns.count >= 2
                 && (originSet.isEmpty || originSet.contains(suffix.asns[suffix.asns.count - 1]))
-                && suffix.asns.dropFirst().allSatisfy { !used.contains($0) }
         }
-        guard let best = candidate else { return chain }
+        guard let rankIndex = eligible.firstIndex(where: { $0.asns.dropFirst().allSatisfy { !used.contains($0) } })
+        else { return chain }
+        let best = eligible[rankIndex]
         var nodes = Array(chain.nodes[...measuredIndex])
         let tail = best.asns.dropFirst()
         for (i, asn) in tail.enumerated() {
@@ -172,6 +194,7 @@ public enum ASChainBuilder {
                                       routeCount: best.count))
         }
         return ASChain(nodes: nodes, source: chain.source, completion: .stitched,
-                       reachedTarget: chain.reachedTarget, lastTTL: chain.lastTTL, skippedHops: chain.skippedHops)
+                       reachedTarget: chain.reachedTarget, lastTTL: chain.lastTTL, skippedHops: chain.skippedHops,
+                       stitchedRouteCount: best.count, stitchedRank: rankIndex + 1)
     }
 }

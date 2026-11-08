@@ -145,21 +145,26 @@ import NetCore
         #expect(router.takeRequest(for: .bgp)?.trace == nil)
     }
 
-    @Test func pathGenerationBumpsOnlyOnRealChange() {
+    @Test func pathGenerationBumpsOnRealChangeAndRejoin() {
         let monitor = NetworkMonitor()
-        let base = monitor.pathGeneration
-        // Settle: let the system's first path update arrive, then take baseline.
+        let t0 = Date(timeIntervalSince1970: 1_000_000)
         let wifi = NetworkMonitor.PathSignature(isSatisfied: true, interfaceTypes: ["wifi"], gateways: ["192.168.1.1"])
-        monitor.apply(wifi)
-        let afterBaseline = monitor.pathGeneration
-        monitor.apply(wifi)
-        #expect(monitor.pathGeneration == afterBaseline)
-        monitor.apply(NetworkMonitor.PathSignature(isSatisfied: true, interfaceTypes: ["cellular"], gateways: []))
-        #expect(monitor.pathGeneration == afterBaseline + 1)
-        monitor.apply(NetworkMonitor.PathSignature(isSatisfied: false, interfaceTypes: [], gateways: []))
-        #expect(monitor.pathGeneration == afterBaseline + 2)
-        monitor.apply(NetworkMonitor.PathSignature(isSatisfied: true, interfaceTypes: ["cellular"], gateways: ["10.0.0.1"]))
-        #expect(monitor.pathGeneration == afterBaseline + 3)
-        #expect(base >= 0)
+        // Pin the baseline far in the past so the system's own first update cannot interfere.
+        monitor.apply(wifi, now: t0)
+        let base = monitor.pathGeneration
+        monitor.apply(wifi, now: t0.addingTimeInterval(0.2))
+        #expect(monitor.pathGeneration == base)
+        // Identical signature later: another Wi-Fi network behind the same gateway.
+        monitor.apply(wifi, now: t0.addingTimeInterval(30))
+        #expect(monitor.pathGeneration == base + 1)
+        monitor.apply(NetworkMonitor.PathSignature(isSatisfied: true, interfaceTypes: ["cellular"], gateways: []),
+                      now: t0.addingTimeInterval(60))
+        #expect(monitor.pathGeneration == base + 2)
+        monitor.apply(NetworkMonitor.PathSignature(isSatisfied: false, interfaceTypes: [], gateways: []),
+                      now: t0.addingTimeInterval(90))
+        #expect(monitor.pathGeneration == base + 3)
+        monitor.apply(NetworkMonitor.PathSignature(isSatisfied: false, interfaceTypes: [], gateways: []),
+                      now: t0.addingTimeInterval(120))
+        #expect(monitor.pathGeneration == base + 3)
     }
 }

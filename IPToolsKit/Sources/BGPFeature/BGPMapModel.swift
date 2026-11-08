@@ -29,7 +29,7 @@ import SharedUI
     /// "cloudflare.com → 104.16.132.229" when the input was a hostname.
     public private(set) var hostLine: String?
     /// Your network, once whats-my-ip and network-info have answered.
-    public internal(set) var myNetwork: MyNetwork?
+    public var myNetwork: MyNetwork? { route.myNetwork }
     var myASN: UInt32? { myNetwork?.asn }
 
     /// Holder of an AS: from the graph's names, else from the names Your route fetched.
@@ -43,6 +43,9 @@ import SharedUI
     private(set) var layoutVersion = 0
     /// Bumped when the user asks for the details of the current selection.
     private(set) var detailsToken = 0
+    /// Bumped when the legend's Fit button is pressed; the canvas refits.
+    private(set) var fitToken = 0
+    func requestFit() { fitToken += 1 }
 
     @ObservationIgnored let api: any RIPEstatAPI
     @ObservationIgnored let recents: RecentsStore
@@ -76,9 +79,15 @@ import SharedUI
         route.configure(api: api, service: traceService, settings: settings)
     }
 
-    /// Stops a running measurement.
+    /// Stops a running measurement and keeps new ones from starting until `resumeFromBackground()`.
     public func stopForBackground() {
+        route.isSuspended = true
         route.stop(reason: String(localized: "app moved to background"))
+    }
+
+    /// The app is active again: measurements may start (the user re-measures a stopped route).
+    public func resumeFromBackground() {
+        route.isSuspended = false
     }
 
     /// What the typed input says about the probe target.
@@ -227,7 +236,7 @@ import SharedUI
         lateTask?.cancel()
         route.reset()
         summary = nil
-        myNetwork = nil
+        route.setMyNetwork(nil)
         routeInput = nil
     }
 
@@ -244,7 +253,11 @@ import SharedUI
         }
         let id = runID
         routeSnapshot = snapshot
-        if case .asn = parsed {} else { startLocating() }
+        // Hostnames are located after they resolve to a public address (see `run`).
+        switch parsed {
+        case .ip, .prefix: startLocating()
+        case .asn, .hostname: break
+        }
         phase = .loading(String(localized: "Fetching routes from RIPEstat…"))
         runTask = Task { [weak self] in await self?.run(parsed, text: text, id: id, record: record) }
     }
@@ -268,6 +281,7 @@ import SharedUI
                     fail(rejection)
                     return
                 }
+                startLocating()
                 hostLine = "\(host) → \(resolved.address)"
                 routeInput = RouteInput(label: host, address: resolved.address, hostname: host)
                 phase = .loading(String(localized: "Fetching routes from RIPEstat…"))
@@ -332,7 +346,7 @@ import SharedUI
         let k = maxNodesPerLayer
         let located = await awaitLocate(timeout: .milliseconds(1500))
         guard id == runID else { return }
-        if located.done { myNetwork = located.network }
+        if located.done { route.setMyNetwork(located.network) }
         let (graph, layout) = await Self.compute(paths: paths, k: k, pinned: pinned(located.network?.asn))
         guard id == runID else { return }
         var names: [UInt32: String] = [:]
@@ -481,17 +495,19 @@ import SharedUI
         locateTask = Task { await locator.current(generation: generation) }
     }
 
+    /// Races the locate task against a timeout. Both outcomes resume exactly once; the locate task itself
+    /// is never cancelled, so the late path can still use its answer.
     private func awaitLocate(timeout: Duration) async -> (done: Bool, network: MyNetwork?) {
         guard let task = locateTask else { return (true, nil) }
-        return await withTaskGroup(of: (Bool, MyNetwork?).self) { group in
-            group.addTask { (true, await task.value) }
-            group.addTask {
-                try? await Task.sleep(for: timeout)
-                return (false, nil)
-            }
-            let first = await group.next() ?? (false, nil)
-            group.cancelAll()
-            return first
+        return await withCheckedContinuation { continuation in
+            let gate = LocateRace(continuation)
+            gate.tasks = [
+                Task { gate.finish((true, await task.value)) },
+                Task {
+                    try? await Task.sleep(for: timeout)
+                    gate.finish((false, nil))
+                },
+            ]
         }
     }
 
@@ -513,7 +529,7 @@ import SharedUI
         let context = routeContext(result, collectors: collectors)
         route.ingestNames(result.names)
         if locateDone {
-            route.begin(context, myNetwork: myNetwork)
+            route.begin(context, myNetwork: route.myNetwork)
             return
         }
         // whats-my-ip is slow: show the graph now and finish the route (and the pinned node) when it answers.
@@ -522,10 +538,25 @@ import SharedUI
         lateTask = Task { [weak self] in
             let found = await task.value
             guard let self, !Task.isCancelled, id == self.runID else { return }
-            self.myNetwork = found
+            self.route.setMyNetwork(found)
             if found?.asn != nil { self.rebuild() }
             self.updateSummary()
             self.route.begin(context, myNetwork: found)
         }
+    }
+}
+
+/// Resumes its continuation exactly once and cancels the other racer.
+@MainActor private final class LocateRace {
+    private var continuation: CheckedContinuation<(done: Bool, network: MyNetwork?), Never>?
+    var tasks: [Task<Void, Never>] = []
+
+    init(_ continuation: CheckedContinuation<(done: Bool, network: MyNetwork?), Never>) { self.continuation = continuation }
+
+    func finish(_ result: (done: Bool, network: MyNetwork?)) {
+        guard let continuation else { return }
+        self.continuation = nil
+        for task in tasks { task.cancel() }
+        continuation.resume(returning: result)
     }
 }

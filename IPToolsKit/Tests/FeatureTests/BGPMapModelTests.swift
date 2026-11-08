@@ -37,8 +37,8 @@ private struct FailingAPI: RIPEstatAPI {
         return BGPMapModel(api: api, recents: RecentsStore(defaults: defaults), router: AppRouter(selectedTool: .bgp))
     }
 
-    private func wait(_ condition: () -> Bool) async {
-        for _ in 0..<400 where !condition() { try? await Task.sleep(for: .milliseconds(5)) }
+    private func wait(_ condition: @MainActor () -> Bool) async {
+        _ = await bgpWait(condition)
     }
 
     @Test func classifiesInput() {

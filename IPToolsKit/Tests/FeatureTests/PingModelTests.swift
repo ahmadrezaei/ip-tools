@@ -281,6 +281,7 @@ import SharedUI
 
     @Test func chipLabelsAndCustomRow() {
         #expect(PingCount.label(10) == "10 pings")
+        #expect(PingCount.label(1) == "1 ping")
         #expect(PingCount.label(nil) == "Until stopped")
         #expect(PingCount.customValue(10) == nil)
         #expect(PingCount.customValue(nil) == nil)

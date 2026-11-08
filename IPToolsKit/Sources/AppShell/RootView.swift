@@ -29,6 +29,8 @@ public struct RootView: View {
                     environment.ping.stopForBackground()
                     environment.trace.stopForBackground()
                     environment.bgp.stopForBackground()
+                } else if scenePhase == .active {
+                    environment.bgp.resumeFromBackground()
                 }
             }
     }

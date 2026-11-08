@@ -30,12 +30,19 @@ struct ZoomPanState: Equatable {
     }
 
     /// Opening view: fit if it is readable, else 0.7x with the origin column against the right edge.
-    static func initial(content: CGSize, in view: CGSize) -> ZoomPanState {
+    /// When the graph is taller than the view, it is centred vertically on the origin column (`originMidY`).
+    static func initial(content: CGSize, in view: CGSize, originMidY: CGFloat? = nil) -> ZoomPanState {
         if fitScale(content: content, in: view) >= anchoredScale { return fitted(content: content, in: view) }
         let scale = anchoredScale
         let height = content.height * scale
-        return ZoomPanState(scale: scale, offset: CGSize(width: view.width - content.width * scale,
-                                                         height: height <= view.height ? (view.height - height) / 2 : 0))
+        var offsetY: CGFloat = 0
+        if height <= view.height {
+            offsetY = (view.height - height) / 2
+        } else if let originMidY {
+            offsetY = view.height / 2 - originMidY * scale
+        }
+        let state = ZoomPanState(scale: scale, offset: CGSize(width: view.width - content.width * scale, height: offsetY))
+        return state.clamped(content: content, in: view)
     }
 
     /// Keeps at least `minVisible` points of the graph on screen on each axis.

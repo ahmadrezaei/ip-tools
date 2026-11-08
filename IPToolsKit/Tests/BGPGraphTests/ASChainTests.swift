@@ -320,4 +320,39 @@ private func build(_ hops: [ChainHop], my: UInt32? = 24940, origins: [UInt32] = 
         let once = ASChainBuilder.stitch(stalledIn(100), cleanedPaths: paths, origins: [15169])
         #expect(ASChainBuilder.stitch(once, cleanedPaths: paths, origins: [15169]) == once)
     }
+
+    @Test func targetAnsweredButLookupFailedIsCompleteAndNotStitched() {
+        let hops = [hop(1, .privateAddress, "10.0.0.1", rtts: [0.001]),
+                    hop(2, .network(100), "1.2.3.4", rtts: [0.01]),
+                    hop(3, .unknownNetwork, "8.8.8.8", rtts: [0.02], reached: true)]
+        let chain = build(hops, my: 24940)
+        #expect(chain.completion == .complete)
+        #expect(chain.asnSequence == [24940, 100, 15169])
+        #expect(chain.nodes.last?.role == .destination && chain.nodes.last?.provenance == .measured)
+        let paths = repeated(3, [5, 100, 200, 15169])
+        #expect(ASChainBuilder.stitch(chain, cleanedPaths: paths, origins: [15169]) == chain)
+        // stitch also refuses a gap chain that reached the target.
+        let gap = ASChain(nodes: stalledIn(100).nodes, source: measured, completion: .gap, reachedTarget: true)
+        #expect(ASChainBuilder.stitch(gap, cleanedPaths: paths, origins: [15169]) == gap)
+    }
+
+    @Test func originMidChainGivesUniqueNodeIDs() {
+        let hops = [hop(1, .privateAddress, "10.0.0.1"),
+                    hop(2, .network(15169), "8.8.4.4", rtts: [0.01]),
+                    hop(3, .network(777), "9.9.9.9", rtts: [0.02])]
+        let chain = build(hops, my: 24940)
+        #expect(Set(chain.nodes.map(\.id)).count == chain.nodes.count)
+        #expect(chain.asnSequence == [24940, 15169])
+        #expect(chain.completion == .complete && chain.nodes.last?.role == .destination)
+    }
+
+    @Test func stitchRecordsRankAndCount() {
+        let chain = stalledIn(100)
+        let top = ASChainBuilder.stitch(chain, cleanedPaths: repeated(3, [100, 200, 15169]), origins: [15169])
+        #expect(top.stitchedRank == 1 && top.stitchedRouteCount == 3)
+        let paths = repeated(5, [100, 24940, 15169]) + repeated(2, [100, 15169])
+        let skipped = ASChainBuilder.stitch(chain, cleanedPaths: paths, origins: [15169])
+        #expect(skipped.stitchedRank == 2 && skipped.stitchedRouteCount == 2)
+        #expect(chain.stitchedRank == nil && chain.stitchedRouteCount == nil)
+    }
 }

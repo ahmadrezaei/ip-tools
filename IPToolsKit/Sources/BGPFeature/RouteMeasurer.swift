@@ -8,7 +8,12 @@ import RIPEstat
 
 /// Quick traceroute with hop -> ASN lookups and early-stop rules (DESIGN 6.11.5).
 struct RouteMeasurer: Sendable {
-    enum Update: Sendable { case hops([ChainHop]), finished(reachedOrigin: Bool), failed(Error) }
+    enum Update: Sendable { case hops([ChainHop]), finished(reachedOrigin: Bool, stop: Stop), failed(Error) }
+
+    /// Why the trace ended: by itself, or by an early-stop rule (DESIGN 6.11.5).
+    enum Stop: Sendable, Equatable { case traceEnded, originReached, originSilent, stalled }
+
+    enum Lookup: Sendable, Equatable { case found(UInt32?), failed }
 
     static let options: TraceOptions = {
         var options = TraceOptions()
@@ -18,8 +23,17 @@ struct RouteMeasurer: Sendable {
         return options
     }()
 
-    /// Longest wait for outstanding ASN lookups once the trace has ended.
-    static let lookupGrace: Duration = .seconds(4)
+    /// Longest wait for outstanding ASN lookups once the trace has ended: 4 s + 1 s per 4 pending, at most 10 s.
+    static func lookupGrace(pending: Int) -> Duration { .seconds(min(10, 4 + pending / 4)) }
+
+    /// `networkInfo` for one hop address, retried once. `.found(nil)` means "not announced"; `.failed` means unknown.
+    static func lookup(_ address: String, api: any RIPEstatAPI) async -> Lookup {
+        for _ in 0..<2 {
+            if Task.isCancelled { break }
+            if let info = try? await api.networkInfo(address) { return .found(info.originASNs.first) }
+        }
+        return .failed
+    }
 
     private let service: any TraceService
     private let api: any RIPEstatAPI
@@ -45,7 +59,7 @@ struct RouteMeasurer: Sendable {
 
 private final class Run {
     enum Event: Sendable {
-        case trace(TraceEvent), traceEnded(Error?), asn(IPAddress, UInt32?), deadline
+        case trace(TraceEvent), traceEnded(Error?), asn(IPAddress, RouteMeasurer.Lookup), deadline
     }
 
     struct Hop {
@@ -63,12 +77,13 @@ private final class Run {
     let continuation: AsyncStream<RouteMeasurer.Update>.Continuation
 
     var hops: [Int: Hop] = [:]
-    var asns: [IPAddress: UInt32?] = [:]
+    var asns: [IPAddress: RouteMeasurer.Lookup] = [:]
     var pending: Set<IPAddress> = []
     var finalizing = false
     var done = false
     var lastEmitted: [ChainHop] = []
     var failure: Error?
+    var stoppedEarly = false
 
     init(target: ResolvedTarget, origins: Set<UInt32>, prefixTarget: Bool, service: any TraceService, api: any RIPEstatAPI,
          continuation: AsyncStream<RouteMeasurer.Update>.Continuation) {
@@ -105,12 +120,11 @@ private final class Run {
                     pending.insert(address)
                     let api = api
                     helpers.append(Task {
-                        let info = try? await api.networkInfo(address.description)
-                        sink.yield(.asn(address, info?.originASNs.first))
+                        sink.yield(.asn(address, await RouteMeasurer.lookup(address.description, api: api)))
                     })
                 }
-                if !finalizing, let stop = earlyStop() {
-                    _ = stop
+                if !finalizing, earlyStop() {
+                    stoppedEarly = true
                     traceTask.cancel()
                     beginFinalizing(sink: sink, helpers: &helpers)
                 }
@@ -124,8 +138,9 @@ private final class Run {
                 }
             case let .asn(address, asn):
                 pending.remove(address)
-                asns[address] = .some(asn)
-                if !finalizing, earlyStop() != nil {
+                asns[address] = asn
+                if !finalizing, earlyStop() {
+                    stoppedEarly = true
                     traceTask.cancel()
                     beginFinalizing(sink: sink, helpers: &helpers)
                 }
@@ -141,15 +156,16 @@ private final class Run {
         if let failure {
             continuation.yield(.failed(failure))
         } else {
-            continuation.yield(.finished(reachedOrigin: lastNetworkASN.map(origins.contains) ?? false))
+            continuation.yield(.finished(reachedOrigin: lastNetworkASN.map(origins.contains) ?? false, stop: stopKind()))
         }
     }
 
     private func beginFinalizing(sink: AsyncStream<Event>.Continuation, helpers: inout [Task<Void, Never>]) {
         finalizing = true
         guard !pending.isEmpty else { done = true; return }
+        let grace = RouteMeasurer.lookupGrace(pending: pending.count)
         helpers.append(Task {
-            try? await Task.sleep(for: RouteMeasurer.lookupGrace)
+            try? await Task.sleep(for: grace)
             sink.yield(.deadline)
         })
     }
@@ -190,7 +206,7 @@ private final class Run {
     }
 
     private func asn(of hop: Hop) -> UInt32? {
-        guard let address = hop.address, let value = asns[address] else { return nil }
+        guard let address = hop.address, case let .found(value)? = asns[address] else { return nil }
         return value
     }
 
@@ -199,10 +215,11 @@ private final class Run {
         return nil
     }
 
-    /// Rules c, d, e of DESIGN 6.11.5. (a, b and f are the trace ending by itself.)
-    private func earlyStop() -> Character? {
-        let originTTL = hops.filter { asn(of: $0.value).map(origins.contains) ?? false }.keys.min()
-        if prefixTarget, originTTL != nil { return "c" }
+    private var originTTL: Int? {
+        hops.filter { asn(of: $0.value).map(origins.contains) ?? false }.keys.min()
+    }
+
+    private func silentRun(after originTTL: Int?) -> Int {
         var silent = 0
         var ttl = (hops.filter { $0.value.finished }.keys.max()) ?? 0
         while ttl >= 1, let hop = hops[ttl], hop.finished, hop.address == nil {
@@ -210,9 +227,21 @@ private final class Run {
             silent += 1
             ttl -= 1
         }
-        if originTTL != nil, silent >= 3 { return "d" }
-        if originTTL == nil, silent >= 5 { return "e" }
-        return nil
+        return silent
+    }
+
+    /// Rules c, d, e of DESIGN 6.11.5. (a, b and f are the trace ending by itself.)
+    private func earlyStop() -> Bool {
+        let origin = originTTL
+        if prefixTarget, origin != nil { return true }
+        let silent = silentRun(after: origin)
+        return origin != nil ? silent >= 3 : silent >= 5
+    }
+
+    private func stopKind() -> RouteMeasurer.Stop {
+        guard stoppedEarly else { return .traceEnded }
+        if originTTL == nil { return .stalled }
+        return prefixTarget ? .originReached : .originSilent
     }
 
     private func chainHops() -> [ChainHop] {

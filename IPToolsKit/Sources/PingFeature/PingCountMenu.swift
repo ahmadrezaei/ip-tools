@@ -22,7 +22,7 @@ enum PingCount {
         return value
     }
 
-    /// True when the text is an integer above the upper limit (the alert message turns red).
+    /// True when the text is an integer above the upper limit (the alert shows a warning).
     static func exceedsLimit(_ text: String) -> Bool {
         guard let value = Int(text.trimmingCharacters(in: .whitespacesAndNewlines)) else { return false }
         return value > range.upperBound
@@ -36,7 +36,8 @@ enum PingCount {
 
     static func label(_ count: Int?) -> String {
         guard let count else { return String(localized: "Until stopped") }
-        return String(localized: "\(count) pings", comment: "Ping count chip; plural handled in the string catalog")
+        if count == 1 { return String(localized: "1 ping", comment: "Ping count chip, singular") }
+        return String(localized: "\(count) pings", comment: "Ping count chip, plural")
     }
 }
 
@@ -56,7 +57,7 @@ private struct PingCountAlert: ViewModifier {
     func body(content: Content) -> some View {
         content
             .alert("Number of Pings", isPresented: $isPresented) {
-                TextField("Number", text: $text)
+                TextField(PingCount.exceedsLimit(text) ? "Maximum is 10,000" : "Number", text: $text)
                     #if os(iOS)
                     .keyboardType(.numberPad)
                     #endif
@@ -69,8 +70,7 @@ private struct PingCountAlert: ViewModifier {
                 .disabled(PingCount.validated(text) == nil)
                 Button("Cancel", role: .cancel) {}
             } message: {
-                Text("Between 1 and 10,000.")
-                    .foregroundStyle(PingCount.exceedsLimit(text) ? Color.red : Color.secondary)
+                Text(PingCount.exceedsLimit(text) ? "Too many: enter a number between 1 and 10,000." : "Between 1 and 10,000.")
             }
             .onChange(of: isPresented) {
                 guard isPresented else { return }
@@ -90,7 +90,7 @@ struct PingCountMenu: View {
         Menu {
             Picker("Ping count", selection: $count) {
                 ForEach(PingCount.presets, id: \.self) { value in
-                    Text("\(value) pings").tag(Optional(value))
+                    Text(PingCount.label(value)).tag(Optional(value))
                 }
                 Text("Until stopped").tag(Optional<Int>.none)
                 if let custom = PingCount.customValue(count) {

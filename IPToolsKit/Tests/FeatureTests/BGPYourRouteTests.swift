@@ -90,7 +90,7 @@ import Testing
         for await update in measurer.measure(resolvedTarget(target), origins: [15169], prefixTarget: prefixTarget) {
             switch update {
             case let .hops(list): last = list
-            case let .finished(origin): reached = origin
+            case let .finished(origin, _): reached = origin
             case .failed: failed = true
             }
         }
@@ -173,11 +173,11 @@ import Testing
     private func load(_ model: BGPMapModel, _ target: String = "8.8.8.8") async {
         model.targetText = target
         model.map()
-        _ = await waitUntil { model.phase == .loaded }
+        _ = await bgpWait { model.phase == .loaded }
     }
 
     private func settled(_ model: BGPMapModel) async {
-        _ = await waitUntil {
+        _ = await bgpWait {
             switch model.route.phase {
             case .idle, .locating, .measuring: false
             default: true
@@ -207,7 +207,7 @@ import Testing
         let model = makeBGPModel(api: BGPFakeAPI(), service: Probes.service(Probes.worked))
         await load(model)
         await settled(model)
-        _ = await waitUntil { model.route.names[13335] != nil }
+        _ = await bgpWait { model.route.names[13335] != nil }
         let lines = model.route.exportText.split(separator: "\n").map(String.init)
         #expect(lines[0].hasPrefix("Your route to 8.8.8.8 (8.8.8.0/24, origin AS15169"))
         #expect(lines[1].hasPrefix("Measured by traceroute from this device, "))
@@ -257,7 +257,7 @@ import Testing
                             finishedAt: Date().addingTimeInterval(-60))
         router.open(.bgp, target: "8.8.8.8", autostart: true, trace: snap)
         model.consumeRouterRequest()
-        _ = await waitUntil { model.phase == .loaded }
+        _ = await bgpWait { model.phase == .loaded }
         await settled(model)
         #expect(model.route.phase == .done)
         #expect(service.count == 0)
@@ -272,7 +272,7 @@ import Testing
         let old = snapshot(of: "8.8.8.8", hops: [(1, "192.168.1.1", nil), (2, "8.8.8.8", 15169)], finishedAt: Date().addingTimeInterval(-11 * 60))
         router.open(.bgp, target: "8.8.8.8", autostart: true, trace: old)
         model.consumeRouterRequest()
-        _ = await waitUntil { model.phase == .loaded }
+        _ = await bgpWait { model.phase == .loaded }
         await settled(model)
         #expect(service.count == 1)
         if case let .traceroute(handedOver, _)? = model.route.chain?.source { #expect(!handedOver) } else { Issue.record("expected a trace chain") }
@@ -285,7 +285,7 @@ import Testing
         let other = snapshot(of: "8.8.4.4", hops: [(1, "192.168.1.1", nil), (2, "8.8.4.4", 15169)], finishedAt: Date())
         router.open(.bgp, target: "8.8.8.8", autostart: true, trace: other)
         model.consumeRouterRequest()
-        _ = await waitUntil { model.phase == .loaded }
+        _ = await bgpWait { model.phase == .loaded }
         await settled(model)
         #expect(service.count == 1)
     }
@@ -324,20 +324,20 @@ import Testing
     @Test func stoppingKeepsTheKnownPart() async {
         let model = makeBGPModel(api: BGPFakeAPI(), service: Probes.service(Probes.worked, delay: .milliseconds(40)))
         await load(model)
-        _ = await waitUntil { model.route.chain?.nodes.count ?? 0 >= 3 && model.route.isMeasuring }
+        _ = await bgpWait { model.route.chain?.nodes.count ?? 0 >= 3 && model.route.isMeasuring }
         #expect(model.route.isMeasuring)
         model.route.stop()
         guard case let .stopped(title) = model.route.phase else { Issue.record("expected stopped"); return }
         #expect(title.hasPrefix("Stopped at hop"))
         #expect(model.route.chain != nil)
-        try? await Task.sleep(for: .milliseconds(150))
+        await model.route.measurementTask?.value      // the cancelled loop has ended: nothing can overwrite the state
         if case .stopped = model.route.phase {} else { Issue.record("a stopped route must stay stopped") }
     }
 
     @Test func backgroundStopsWithAReason() async {
         let model = makeBGPModel(api: BGPFakeAPI(), service: Probes.service(Probes.worked, delay: .milliseconds(40)))
         await load(model)
-        _ = await waitUntil { model.route.isMeasuring }
+        _ = await bgpWait { model.route.isMeasuring }
         model.stopForBackground()
         #expect(model.route.phase == .stopped("Stopped: app moved to background"))
     }
@@ -345,7 +345,7 @@ import Testing
     @Test func newMapCancelsTheMeasurement() async {
         let model = makeBGPModel(api: BGPFakeAPI(), service: Probes.service(Probes.worked, delay: .milliseconds(40)))
         await load(model)
-        _ = await waitUntil { model.route.isMeasuring }
+        _ = await bgpWait { model.route.isMeasuring }
         model.targetText = "10.0.0.1"
         model.map()
         #expect(model.route.phase == .idle)

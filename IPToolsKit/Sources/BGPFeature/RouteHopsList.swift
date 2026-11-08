@@ -43,10 +43,18 @@ struct RouteHopsList: View {
         return HStack(spacing: 6) {
             Text(prefix).font(.footnote.weight(.semibold))
             if let asn = node.asn { Text(verbatim: "AS\(asn)").font(.footnote.weight(.semibold)).monospacedDigit().foregroundStyle(Color.accentColor) }
-            if node.role == .you { Text("local network").font(.footnote).foregroundStyle(.secondary) }
+            if let local = localLabel(node) { Text(local).font(.footnote).foregroundStyle(.secondary) }
         }
         .padding(.top, 10).padding(.bottom, 2)
         .accessibilityAddTraits(.isHeader)
+    }
+
+    private func localLabel(_ node: ASChain.Node) -> String? {
+        switch RouteText.localHops(node) {
+        case .none: nil
+        case .all: String(localized: "local network")
+        case let .mixed(count): String(localized: "\(count) local hops")
+        }
     }
 
     private func row(_ hop: ChainHop) -> some View {

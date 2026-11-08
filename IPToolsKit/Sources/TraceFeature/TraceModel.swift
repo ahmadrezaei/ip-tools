@@ -192,7 +192,7 @@ public struct TraceHop: Identifiable, Hashable, Sendable {
                                         allAddresses: [address])
             let marked = base.hops.map { entry in
                 entry.ttl == hop.ttl
-                    ? TraceSnapshot.Hop(ttl: entry.ttl, address: entry.address, hostname: entry.hostname, asn: entry.asn,
+                    ? TraceSnapshot.Hop(ttl: entry.ttl, address: address, hostname: entry.hostname, asn: asnCache[address]?.asn,
                                         rtts: entry.rtts, reachedTarget: true)
                     : entry
             }

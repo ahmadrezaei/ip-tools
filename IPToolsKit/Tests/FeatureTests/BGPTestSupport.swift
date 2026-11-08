@@ -15,6 +15,8 @@ final class BGPFakeAPI: RIPEstatAPI, @unchecked Sendable {
     private var _networkInfoCalls: [String] = []
 
     var myIP: String? = "91.107.240.242"
+    var whatsMyIPDelay: Duration?
+    var failNetworkInfo: Set<String> = []
     var risPaths: [[UInt32]] = [[3320, 15169], [3320, 15169], [1299, 15169], [1299, 15169], [1299, 15169],
                                 [174, 3356, 15169], [6939, 1299, 15169]]
     var infoByIP: [String: NetworkInfo] = [
@@ -40,12 +42,14 @@ final class BGPFakeAPI: RIPEstatAPI, @unchecked Sendable {
 
     func whatsMyIP() async throws -> WhatsMyIP {
         lock.withLock { _whatsMyIPCalls += 1 }
+        if let delay = whatsMyIPDelay { try await Task.sleep(for: delay) }
         guard let myIP else { throw RIPEstatError.offline }
         return WhatsMyIP(ip: myIP)
     }
 
     func networkInfo(_ ip: String) async throws -> NetworkInfo {
         lock.withLock { _networkInfoCalls.append(ip) }
+        if failNetworkInfo.contains(ip) { throw RIPEstatError.offline }
         guard let info = infoByIP[ip] else { return NetworkInfo(prefix: nil, originASNs: []) }
         return info
     }
@@ -127,4 +131,58 @@ func snapshot(of target: String, hops: [(Int, String?, UInt32?)], finishedAt: Da
     }
     return TraceSnapshot(target: resolvedTarget(target), hops: list, completion: reached ? .reachedDestination(hops: hops.count) : nil,
                          finishedAt: finishedAt)
+}
+
+/// Yields (no fixed sleeps) until `condition` holds or `timeout` passes.
+@MainActor func bgpWait(timeout: Duration = .seconds(10), _ condition: @MainActor () -> Bool) async -> Bool {
+    let deadline = ContinuousClock.now.advanced(by: timeout)
+    while !condition(), ContinuousClock.now < deadline { await Task.yield() }
+    return condition()
+}
+
+/// Forwards to `BGPFakeAPI`, but `asNames` waits on a gate and can fail on demand.
+final class GatedNamesAPI: RIPEstatAPI, @unchecked Sendable {
+    let inner = BGPFakeAPI()
+    private let lock = NSLock()
+    private var _calls: [[UInt32]] = []
+    private var _failFirst = false
+    private var waiters: [CheckedContinuation<Void, Never>] = []
+    private var _open = true
+    var calls: [[UInt32]] { lock.withLock { _calls } }
+    func closeGate() { lock.withLock { _open = false } }
+    func openGate() {
+        let pending = lock.withLock { () -> [CheckedContinuation<Void, Never>] in
+            _open = true
+            defer { waiters = [] }
+            return waiters
+        }
+        for waiter in pending { waiter.resume() }
+    }
+    func failFirstCall() { lock.withLock { _failFirst = true } }
+
+    func asNames(_ asns: [UInt32]) async throws -> [UInt32: String] {
+        let fail = lock.withLock { () -> Bool in
+            _calls.append(asns)
+            defer { _failFirst = false }
+            return _failFirst
+        }
+        await withCheckedContinuation { (continuation: CheckedContinuation<Void, Never>) in
+            let resumeNow = lock.withLock { () -> Bool in
+                if _open { return true }
+                waiters.append(continuation)
+                return false
+            }
+            if resumeNow { continuation.resume() }
+        }
+        try Task.checkCancellation()     // an in-flight fetch must not be cancelled by a newer request
+        if fail { throw RIPEstatError.offline }
+        return try await inner.asNames(asns)
+    }
+    func whatsMyIP() async throws -> WhatsMyIP { try await inner.whatsMyIP() }
+    func networkInfo(_ ip: String) async throws -> NetworkInfo { try await inner.networkInfo(ip) }
+    func lookingGlass(_ resource: String) async throws -> LookingGlass { try await inner.lookingGlass(resource) }
+    func prefixOverview(_ prefix: String) async throws -> PrefixOverview { try await inner.prefixOverview(prefix) }
+    func asOverview(_ asn: UInt32) async throws -> ASOverview { try await inner.asOverview(asn) }
+    func announcedPrefixes(_ asn: UInt32) async throws -> [String] { try await inner.announcedPrefixes(asn) }
+    func routingStatus(_ prefix: String) async throws -> RoutingStatus { try await inner.routingStatus(prefix) }
 }

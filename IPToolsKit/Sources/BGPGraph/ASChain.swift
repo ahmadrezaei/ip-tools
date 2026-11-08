@@ -61,14 +61,22 @@ public struct ASChain: Hashable, Sendable {
     public let reachedTarget: Bool
     public let lastTTL: Int?
     public let skippedHops: Int
+    /// Stitched chains only: how many observed routes took the stitched suffix.
+    public let stitchedRouteCount: Int?
+    /// Stitched chains only: 1-based rank of the stitched suffix among the candidates (1 = the most common
+    /// route; > 1 means a more common one was skipped because it looped back into the measured chain).
+    public let stitchedRank: Int?
     public var asnSequence: [UInt32] { nodes.compactMap(\.asn) }
     public init(nodes: [Node], source: Source, completion: Completion, reachedTarget: Bool,
-                lastTTL: Int? = nil, skippedHops: Int = 0) {
+                lastTTL: Int? = nil, skippedHops: Int = 0,
+                stitchedRouteCount: Int? = nil, stitchedRank: Int? = nil) {
         self.nodes = nodes
         self.source = source
         self.completion = completion
         self.reachedTarget = reachedTarget
         self.lastTTL = lastTTL
         self.skippedHops = skippedHops
+        self.stitchedRouteCount = stitchedRouteCount
+        self.stitchedRank = stitchedRank
     }
 }

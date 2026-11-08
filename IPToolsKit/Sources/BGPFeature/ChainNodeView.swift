@@ -26,9 +26,10 @@ struct ChainNodeView: View {
     }
     private var prefix: String { route.context?.prefix ?? "" }
 
-    private var title: String {
-        if let asn = node.asn { return route.shortName(asn) ?? "AS\(asn)" }
-        return String(localized: "Your network")
+    /// The network name; nil when the AS is known but its name isn't (the AS badge then stands alone).
+    private var title: String? {
+        guard let asn = node.asn else { return String(localized: "Your network") }
+        return route.shortName(asn)
     }
 
     var body: some View {
@@ -72,7 +73,7 @@ struct ChainNodeView: View {
                 if isStitched { fromBGPTag }
             }
             if let asn = node.asn { Text(verbatim: "AS\(asn)").font(.caption.weight(.semibold)).monospacedDigit().foregroundStyle(.secondary) }
-            Text(title).font(.headline).lineLimit(2)
+            if let title { Text(title).font(.headline).lineLimit(2) }
             Text(roleText).font(.footnote).foregroundStyle(.secondary)
             detailLine
         }
@@ -80,7 +81,7 @@ struct ChainNodeView: View {
 
     private var titleLine: some View {
         HStack(spacing: 6) {
-            Text(title).font(.body.weight(.semibold)).lineLimit(1)
+            if let title { Text(title).font(.body.weight(.semibold)).lineLimit(1) }
             if let asn = node.asn {
                 Text(verbatim: "AS\(asn)")
                     .font(.caption.weight(.semibold)).monospacedDigit()
@@ -121,18 +122,7 @@ struct ChainNodeView: View {
         }
     }
 
-    private var roleText: String {
-        switch node.role {
-        case .you:
-            return String(localized: "Your network")
-        case .transit:
-            return isLastSeen ? String(localized: "Transit network · last network seen") : String(localized: "Transit network")
-        case .destination:
-            return String(localized: "Destination · announces \(prefix)")
-        case .youAndDestination:
-            return String(localized: "Your network · announces \(prefix)")
-        }
-    }
+    private var roleText: String { RouteText.role(node.role, .row(prefix: prefix, lastSeen: isLastSeen)) }
 
     @ViewBuilder private var detailLine: some View {
         if isExpected {
@@ -154,7 +144,9 @@ struct ChainNodeView: View {
     private func measuredText(_ ttls: ClosedRange<Int>) -> String {
         let hops = RouteText.hops(ttls) ?? ""
         var text = String(localized: "Hops \(hops)")
-        if node.role == .you { text += " " + String(localized: "(local)") }
+        if let local = RouteText.localHopsSuffix(node) {
+            text += RouteText.localHops(node) == .all ? " " + local : " · " + local
+        }
         if let rtt = RouteText.rtt(node.rttRange) { text += " · " + rtt }
         if node.role == .destination, chain?.reachedTarget == true { text += " · " + String(localized: "reached") }
         return text

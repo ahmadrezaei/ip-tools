@@ -4,37 +4,82 @@
 import SharedUI
 import SwiftUI
 
-/// One compact row at the bottom of the canvas (DESIGN 6.12 item 5). The info button opens "How to read this map".
+/// The legend, wrapping to as many rows as it needs (DESIGN 6.12 item 5). ⓘ and Fit sit trailing.
 struct GraphLegend: View {
     var showsYou = false
+    var onFit: () -> Void = {}
     var onInfo: () -> Void = {}
 
     var body: some View {
-        HStack(alignment: .center, spacing: 8) {
-            LegendItems(showsYou: showsYou)
-            Spacer(minLength: 0)
-            Button(action: onInfo) { Image(systemName: "info.circle").font(.body) }
+        LegendItems(showsYou: showsYou)
+            .padding(.leading, 12).padding(.vertical, 6)
+            .padding(.trailing, 72)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .overlay(alignment: .topTrailing) {
+                HStack(spacing: 10) {
+                    Button(action: onFit) { Image(systemName: "arrow.up.left.and.arrow.down.right").font(.body) }
+                        .accessibilityLabel(Text("Fit graph to screen"))
+                    Button(action: onInfo) { Image(systemName: "info.circle").font(.body) }
+                        .accessibilityLabel(Text("How to read this map"))
+                }
                 .buttonStyle(.plain)
-                .accessibilityLabel(Text("How to read this map"))
+                .padding(.trailing, 12).padding(.top, 5)
+            }
+            .background(.bar, in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+    }
+}
+
+/// Left-aligned flow: items keep their size and wrap onto the next row.
+private struct LegendFlow: Layout {
+    var spacing: CGFloat = 10
+    var lineSpacing: CGFloat = 4
+
+    private func rows(_ subviews: Subviews, width: CGFloat) -> [[(index: Int, size: CGSize)]] {
+        var rows: [[(Int, CGSize)]] = [[]]
+        var x: CGFloat = 0
+        for (index, subview) in subviews.enumerated() {
+            let size = subview.sizeThatFits(.unspecified)
+            if x > 0, x + size.width > width { rows.append([]); x = 0 }
+            rows[rows.count - 1].append((index, size))
+            x += size.width + spacing
         }
-        .padding(.horizontal, 12).padding(.vertical, 4)
-        .frame(minHeight: 24)
-        .background(.bar, in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+        return rows
+    }
+
+    func sizeThatFits(proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) -> CGSize {
+        let width = proposal.width ?? .infinity
+        let laid = rows(subviews, width: width)
+        let height = laid.map { $0.map(\.size.height).max() ?? 0 }.reduce(0, +) + lineSpacing * CGFloat(max(laid.count - 1, 0))
+        let used = laid.map { $0.map(\.size.width).reduce(0, +) + spacing * CGFloat(max($0.count - 1, 0)) }.max() ?? 0
+        return CGSize(width: proposal.width ?? used, height: height)
+    }
+
+    func placeSubviews(in bounds: CGRect, proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) {
+        var y = bounds.minY
+        for row in rows(subviews, width: bounds.width) {
+            let rowHeight = row.map(\.size.height).max() ?? 0
+            var x = bounds.minX
+            for (index, size) in row {
+                subviews[index].place(at: CGPoint(x: x, y: y + (rowHeight - size.height) / 2), proposal: ProposedViewSize(size))
+                x += size.width + spacing
+            }
+            y += rowHeight + lineSpacing
+        }
     }
 }
 
 private struct LegendItems: View {
     var showsYou: Bool
     var body: some View {
-        HStack(spacing: 10) {
+        LegendFlow(spacing: 10, lineSpacing: 4) {
             ForEach(items(), id: \.title) { item in
                 HStack(spacing: 4) {
                     item.mark.frame(width: 14, height: 12)
-                    Text(item.title).font(.caption2).foregroundStyle(.secondary).lineLimit(2)
+                    Text(item.title).font(.caption2).foregroundStyle(.secondary).lineLimit(1)
                 }
+                .fixedSize()
             }
         }
-        .fixedSize(horizontal: false, vertical: true)
     }
 
     struct Item { let title: String; let mark: AnyView }
