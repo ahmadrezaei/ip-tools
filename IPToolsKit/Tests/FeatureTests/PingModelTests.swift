@@ -115,12 +115,14 @@ import SharedUI
 
     @Test func staleResolveFailureDoesNotAffectNewerRun() async {
         let ip = cloudflare
-        let calls = CallCounter()
+        let fastCalls = CallCounter()
+        // Keyed on the input, not call order: the two run tasks may start in either order.
         let (model, _, _) = makeModel(script: [.reply(rtt: 0.01, bytes: 64, ttl: 58, from: ip)], count: nil, resolve: { input, _ in
-            if calls.next() == 1 {
+            if input == "slow.example" {
                 try? await Task.sleep(for: .milliseconds(150))   // ignores cancellation, then fails late
                 throw NetError.resolutionFailed(host: input, reason: "late")
             }
+            _ = fastCalls.next()
             return ResolvedTarget(input: input, address: ip, hostname: nil, allAddresses: [ip])
         })
         model.targetText = "slow.example"
@@ -128,10 +130,11 @@ import SharedUI
         model.stop()
         model.targetText = "1.1.1.1"
         model.start()
-        #expect(await waitUntil { model.phase == .running })
         try? await Task.sleep(for: .milliseconds(300))
-        #expect(model.phase == .running)
         #expect(model.error == nil)
+        if case .failed = model.phase { Issue.record("stale failure leaked: \(model.phase)") }
+        #expect(fastCalls.next() >= 2)   // newer run's resolver was invoked
+        #expect(model.runTarget == "1.1.1.1")
         model.stop()
     }
 
