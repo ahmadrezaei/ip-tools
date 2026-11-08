@@ -8,8 +8,6 @@ import Observation
 import RIPEstat
 import SharedUI
 
-public enum BGPView: String, Sendable, CaseIterable { case yourRoute, allRoutes }
-
 /// What the route needs to know about the map that was just loaded.
 struct RouteContext {
     var label: String                       // what the user typed ("8.8.8.8", "cloudflare.com", "8.8.8.0/24")
@@ -24,30 +22,17 @@ struct RouteContext {
     var isPrefixTarget: Bool { address == nil }
 }
 
-struct RouteAnnouncement: Equatable { let id: Int; let text: String }
-
-/// The copy-worthy ends of a trace: rule c ("Reached Google's network at hop 8") and rule d (target silent).
-enum RouteOutcome: Equatable {
-    case reachedOrigin(asn: UInt32, hop: Int)
-    case targetSilent(asn: UInt32, hop: Int)
-}
-
 @MainActor @Observable public final class YourRouteModel {
     public enum Phase: Equatable {
         case idle, locating, measuring(ttl: Int), done, partial(String), stopped(String),
              lookupsOff, unavailable, failed(String)
     }
-    public private(set) var phase: Phase = .idle
-    public private(set) var chain: ASChain?
+    public private(set) var phase: Phase = .idle { didSet { changed() } }
+    public private(set) var chain: ASChain? { didSet { changed() } }
     public private(set) var myNetwork: MyNetwork?
-    public var selection: String?                     // ASChain.Node.id
 
     private(set) var context: RouteContext?
     private(set) var names: [UInt32: String] = [:]
-    private(set) var announcement: RouteAnnouncement?
-    /// How an early-stopped trace ended (DESIGN 6.11.5 rules c and d).
-    private(set) var outcome: RouteOutcome?
-    private(set) var privacyNoteSeen = false
 
     @ObservationIgnored private var api: (any RIPEstatAPI)?
     @ObservationIgnored private var service: (any TraceService)?
@@ -61,11 +46,13 @@ enum RouteOutcome: Equatable {
     @ObservationIgnored private var failedNames: Set<UInt32> = []
     @ObservationIgnored private(set) var hops: [ChainHop] = []
     @ObservationIgnored private var startedAt = Date()
-    @ObservationIgnored private var lastAnnouncementAt: Date?
     @ObservationIgnored private var runID = 0
-    @ObservationIgnored private var announcedASNs: Set<UInt32> = []
     /// True while the app is in the background: no new measurement may start.
     @ObservationIgnored var isSuspended = false
+
+    /// Called whenever the phase or the chain changes (the map redraws the your-path overlay).
+    @ObservationIgnored var onChange: (() -> Void)?
+    private func changed() { onChange?() }
 
     static let snapshotMaxAge: TimeInterval = 10 * 60
 
@@ -92,13 +79,11 @@ enum RouteOutcome: Equatable {
         namesFetches = []
         requestedNames = []
         failedNames = []
-        outcome = nil
         task = nil
         phase = .idle
         chain = nil
         context = nil
         hops = []
-        selection = nil
     }
 
     func beginLocating() {
@@ -155,13 +140,7 @@ enum RouteOutcome: Equatable {
         guard context != nil else { return }
         runID += 1
         task?.cancel()
-        selection = nil
         startMeasuring()
-    }
-
-    func turnOnLookups() {
-        settings?.trace.lookUpASNs = true
-        measureAgain()
     }
 
     public func stop(reason: String? = nil) {
@@ -176,7 +155,6 @@ enum RouteOutcome: Equatable {
             chain = nil
         }
         phase = .stopped(title)
-        announce(title, force: true)
     }
 
     // MARK: Sources
@@ -232,7 +210,6 @@ enum RouteOutcome: Equatable {
             let title = String(localized: "Stopped: app moved to background")
             chain = nil
             phase = .stopped(title)
-            announce(title, force: true)
             return
         }
         guard let service, let api else { phase = .unavailable; chain = nil; return }
@@ -242,8 +219,6 @@ enum RouteOutcome: Equatable {
             return
         }
         hops = []
-        outcome = nil
-        announcedASNs = []
         startedAt = now()
         chain = placeholderChain()
         phase = .measuring(ttl: 0)
@@ -275,17 +250,8 @@ enum RouteOutcome: Equatable {
             let ttl = built.lastTTL ?? list.last?.ttl ?? 0
             phase = .measuring(ttl: ttl)
             requestNames()
-            if let node = built.nodes.last(where: { $0.provenance == .measured && $0.role == .transit }),
-               let asn = node.asn, announcedASNs.insert(asn).inserted {
-                announce(String(localized: "\(shortName(asn) ?? "AS \(asn)") found at hop \(node.ttls?.lowerBound ?? ttl)"))
-            }
-        case let .finished(reachedOrigin, stop):
+        case .finished:
             finish(source: .traceroute(handedOver: false, measuredAt: now()), stitch: true)
-            if reachedOrigin, stop != .traceEnded, let context,
-               let hop = hops.first(where: { if case let .network(asn) = $0.kind { context.origins.contains(asn) } else { false } }),
-               case let .network(asn) = hop.kind {
-                outcome = stop == .originSilent ? .targetSilent(asn: asn, hop: hop.ttl) : .reachedOrigin(asn: asn, hop: hop.ttl)
-            }
         case let .failed(error):
             phase = .failed(BGPFailure.from(error).message(for: error))
         }
@@ -298,7 +264,6 @@ enum RouteOutcome: Equatable {
         chain = built
         requestNames()
         phase = finalPhase(for: built)
-        announce(statusTitle, force: true)
     }
 
     private func finalPhase(for chain: ASChain) -> Phase {
@@ -395,17 +360,6 @@ enum RouteOutcome: Equatable {
         namesFetches.removeAll { $0.isCancelled }
         namesFetches.append(fetch)
     }
-
-    // MARK: Announcements (VoiceOver)
-
-    private func announce(_ text: String, force: Bool = false) {
-        let date = Date()
-        if !force, let last = lastAnnouncementAt, date.timeIntervalSince(last) < 3 { return }
-        lastAnnouncementAt = date
-        announcement = RouteAnnouncement(id: (announcement?.id ?? 0) + 1, text: text)
-    }
-
-    func markPrivacyNoteSeen() { privacyNoteSeen = true }
 }
 
 private extension BGPFailure {

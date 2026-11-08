@@ -44,13 +44,15 @@ struct BGPStats: Sendable {
 
     func role(of asn: UInt32) -> Role {
         if originSet.contains(asn) { return .origin }
+        if graph.pathCounts[asn] == nil { return .transit }       // only on the overlay path
         return (graph.transitCounts[asn] ?? 0) > 0 ? .transit : .peer
     }
 
     func summary(for id: NodeID, graph: ASGraph) -> Summary? {
         switch id {
         case let .asn(asn):
-            guard let count = graph.pathCounts[asn] else { return nil }
+            // An AS only on the overlay path (your path) is in the graph with no routes.
+            guard let count = graph.pathCounts[asn] ?? (graph.node(id) == nil ? nil : 0) else { return nil }
             return Summary(id: id, asn: asn, role: role(of: asn), paths: count, fraction: fraction(count),
                            hops: graph.layerByASN[asn] ?? 0, collapsed: [])
         case .more:
@@ -106,33 +108,6 @@ enum BGPText {
         guard let holder, !holder.isEmpty else { return nil }
         let short = ASName.short(holder)
         return short.isEmpty ? nil : short
-    }
-
-    /// Short name of the single origin; nil for MOAS or an unknown name.
-    static func originName(_ result: BGPResult) -> String? {
-        guard result.originASNs.count == 1, let asn = result.originASNs.first else { return nil }
-        return shortName(result.holder(of: asn))
-    }
-
-    /// Graph column header: DESTINATION, NEXT TO GOOGLE, 2 STEPS AWAY.
-    static func columnTitle(layer: Int, originName: String?) -> String {
-        switch layer {
-        case 0: return String(localized: "DESTINATION")
-        case 1:
-            if let originName { return String(localized: "NEXT TO \(String(originName.uppercased().prefix(12)))") }
-            return String(localized: "NEXT TO ORIGIN")
-        default: return String(localized: "\(layer) STEPS AWAY")
-        }
-    }
-
-    /// List section title: "Next to Google · 229 networks".
-    static func sectionTitle(layer: Int, originName: String?, count: Int) -> String {
-        let place: String
-        switch layer {
-        case 1: place = originName.map { String(localized: "Next to \($0)") } ?? String(localized: "Next to origin")
-        default: place = String(localized: "\(layer) steps away")
-        }
-        return place + " · " + String(localized: "\(count) networks")
     }
 
     /// "AS 3356, Level 3 Parent, transit, 4 paths, 1 hop from origin"

@@ -164,24 +164,6 @@ import Testing
         #expect(model.route.phase == .partial("Couldn't look up the networks on the way."))
     }
 
-    @Test func ruleCReadsReachedNetworkAtHop() async {
-        let model = makeBGPModel(api: BGPFakeAPI(), service: Probes.service(Probes.worked))
-        await load(model, "8.8.8.0/24")
-        await settled(model)
-        _ = await bgpWait { model.route.names[15169] != nil }
-        #expect(model.route.statusTitle == "Reached Google's network at hop 8")
-    }
-
-    @Test func ruleDReadsTargetDidNotAnswer() async {
-        let script = Probes.local + Probes.cloudflare + [Probes.hop("108.170.255.223")] + [Probes.silent, Probes.silent, Probes.silent]
-            + [Probes.hop("72.14.237.93"), Probes.reply("8.8.8.8")]
-        let model = makeBGPModel(api: BGPFakeAPI(), service: Probes.service(script))
-        await load(model)
-        await settled(model)
-        _ = await bgpWait { model.route.names[15169] != nil }
-        #expect(model.route.statusTitle == "Reached Google's network. 8.8.8.8 itself didn't answer.")
-    }
-
     @Test func inProgressVoiceOverNeverSaysStopped() {
         let route = YourRouteModel()
         let live = ASChain(nodes: [ASChain.Node(asn: nil, role: .you, provenance: .measured),
@@ -227,20 +209,16 @@ import Testing
     @Test func allPrivateSaysLocal() {
         let n = node([.privateAddress, .silent, .privateAddress])
         #expect(RouteText.localHops(n) == .all)
-        #expect(RouteText.localHopsSuffix(n) == "(local)")
     }
 
     @Test func mixedCountsLocalHops() {
         let n = node([.privateAddress, .privateAddress, .privateAddress, .privateAddress, .network(24940),
                       .silent, .silent, .silent, .network(24940), .network(24940)])
         #expect(RouteText.localHops(n) == .mixed(4))
-        #expect(RouteText.localHopsSuffix(n) == "4 local")
     }
 
     @Test func noPrivateHopsAddsNothing() {
         let n = node([.network(24940), .silent])
         #expect(RouteText.localHops(n) == .none)
-        #expect(RouteText.localHopsSuffix(n) == nil)
-        #expect(RouteText.localHopsSuffix(node([.privateAddress], role: .transit)) == nil)
     }
 }

@@ -176,6 +176,10 @@ import Testing
         _ = await bgpWait { model.phase == .loaded }
     }
 
+    private func overlay(of graph: ASGraph?, _ from: UInt32, _ to: UInt32) -> GraphEdge.Overlay? {
+        graph?.edges.first { $0.from == .asn(from) && $0.to == .asn(to) }?.overlay
+    }
+
     private func settled(_ model: BGPMapModel) async {
         _ = await bgpWait {
             switch model.route.phase {
@@ -185,9 +189,10 @@ import Testing
         }
     }
 
-    @Test func yourRouteIsTheDefaultView() {
+    @Test func headerStartsCollapsedAndNoPathIsShownBeforeLoading() {
         let model = makeBGPModel(api: BGPFakeAPI(), service: nil)
-        #expect(model.view == .yourRoute)
+        #expect(!model.headerExpanded)
+        #expect(model.route.pathStatus == .hidden && model.route.pathOverlay == .none)
     }
 
     @Test func freshTracebuildsTheChain() async {
@@ -200,29 +205,40 @@ import Testing
         #expect(model.route.chain?.reachedTarget == true)
         #expect(model.route.myNetwork?.asn == 24940)
         #expect(service.count == 1)
-        #expect(model.summary?.myASNRouteCount == 0)
+        // The graph carries your path as an overlay; the AS is not in any RIS route.
+        _ = await bgpWait { model.result?.graph.highlightPathNodeIDs.count == 3 }
+        let graph = model.result?.graph
+        #expect(graph?.highlightPathNodeIDs == [.asn(24940), .asn(13335), .asn(15169)])
+        #expect(overlay(of: graph, 24940, 13335) == .path)
+        #expect(graph?.pathCounts[24940] == nil)
+        #expect(model.route.pathStatus == .shown)
     }
 
-    @Test func exportAndAccessibilityDescribeTheChain() async {
+    @Test func exportAndAccessibilityDescribeYourPath() async {
         let model = makeBGPModel(api: BGPFakeAPI(), service: Probes.service(Probes.worked))
         await load(model)
         await settled(model)
-        _ = await bgpWait { model.route.names[13335] != nil }
-        let lines = model.route.exportText.split(separator: "\n").map(String.init)
-        #expect(lines[0].hasPrefix("Your route to 8.8.8.8 (8.8.8.0/24, origin AS15169"))
-        #expect(lines[1].hasPrefix("Measured by traceroute from this device, "))
-        #expect(lines[1].hasSuffix(", 11 hops"))
-        #expect(lines[2].hasPrefix("  You  AS24940"))
-        #expect(lines[2].contains("hops 1–3"))
-        #expect(lines[3].contains("   →   AS13335"))
-        #expect(lines[4].contains("(reached 8.8.8.8)"))
-        #expect(lines.last == "— IP Tools for iOS")
-        #expect(model.exportText == model.route.exportText)
+        _ = await bgpWait { model.route.names[13335] != nil && model.route.names[24940] != nil }
+        let lines = model.exportText.split(separator: "\n").map(String.init)
+        #expect(lines[0].hasPrefix("BGP paths for 8.8.8.0/24"))
+        #expect(lines[1].hasPrefix("Source: RIPE RIS via RIPEstat"))
+        #expect(lines[2].hasPrefix("Your path: AS24940 "))
+        #expect(lines[2].contains(" → AS13335 "))
+        #expect(lines[2].hasSuffix(" → AS15169 Google (measured by traceroute)"), "\(lines[2])")
+        #expect(lines.filter { $0.hasPrefix("Your path") }.count == 1)
         let sentence = model.route.accessibilitySentence
         #expect(sentence.hasPrefix("Your route to 8.8.8.8, measured by traceroute: from your network, AS 24940"))
         #expect(sentence.contains("through AS 13335"))
         #expect(sentence.contains("to AS 15169"))
         #expect(sentence.hasSuffix("the destination. 11 hops."))
+    }
+
+    @Test func exportHasNoPathLineWithoutAPath() async {
+        let model = makeBGPModel(api: BGPFakeAPI(), service: nil)
+        await load(model)
+        await settled(model)
+        #expect(!model.exportText.contains("Your path"))
+        #expect(model.exportText.hasPrefix("BGP paths for"))
     }
 
     @Test func bgpChainIsUsedWhenMyASNIsInRIS() async {
@@ -236,10 +252,11 @@ import Testing
         #expect(model.route.chain?.asnSequence == [3320, 15169])
         if case .bgp? = model.route.chain?.source {} else { Issue.record("expected a BGP chain") }
         #expect(service.count == 0)
-        #expect(model.route.exportText.contains("Seen in BGP from your network"))
+        #expect(model.route.exportLine?.hasSuffix("(seen in BGP from your network)") == true)
         #expect(model.route.accessibilitySentence.contains("seen in BGP"))
         #expect(model.route.accessibilitySentence.contains("directly to AS 15169"))
-        #expect(model.summary?.myASNRouteCount == 2)
+        _ = await bgpWait { model.result?.graph.highlightPathNodeIDs == [.asn(3320), .asn(15169)] }
+        #expect(model.result?.graph.pathCounts[3320] == 2)          // counts are the observed ones
         // One tap measures for real and replaces the chain.
         model.route.measureAgain()
         await settled(model)
@@ -297,7 +314,10 @@ import Testing
         await settled(model)
         #expect(model.route.phase == .partial("Traceroute couldn't see past hop 7"))
         #expect(model.route.chain?.completion == .gap)
-        #expect(model.route.exportText.contains("   ?   unknown networks"), "\(model.route.exportText)")
+        #expect(model.route.exportLine?.contains("→ unknown networks → AS15169") == true, "\(model.route.exportLine ?? "")")
+        #expect(model.route.pathStatus == .partial)
+        _ = await bgpWait { overlay(of: model.result?.graph, 13335, 15169) == .unknownSegment }
+        #expect(overlay(of: model.result?.graph, 13335, 15169) == .unknownSegment)
         #expect(model.route.accessibilitySentence.contains("then unknown networks"))
     }
 
@@ -310,7 +330,8 @@ import Testing
         #expect(title.contains("Traceroute stopped in"))
         #expect(model.route.chain?.completion == .stitched)
         #expect(model.route.chain?.asnSequence == [24940, 1299, 15169])
-        #expect(model.route.exportText.contains("(from BGP)"))
+        #expect(model.route.exportLine?.hasSuffix("(measured by traceroute, rest from BGP)") == true)
+        #expect(model.route.pathStatus == .shown)
     }
 
     @Test func noPublicHopAnswered() async {
@@ -318,7 +339,7 @@ import Testing
         await load(model)
         await settled(model)
         #expect(model.route.phase == .partial("No router on the way answered"))
-        #expect(model.route.statusSubtitle == "Some networks block traceroute.")
+        #expect(model.route.pathStatus == .partial)           // only the dashed expected hop
     }
 
     @Test func stoppingKeepsTheKnownPart() async {
@@ -351,7 +372,7 @@ import Testing
         #expect(model.route.phase == .idle)
     }
 
-    @Test func lookupsOffShowsTheStateAndTurnOnMeasures() async {
+    @Test func lookupsOffShowsNoPath() async {
         let settings = makeSettings()
         settings.trace.lookUpASNs = false
         let service = CountingTraceService(Probes.service(Probes.worked))
@@ -360,10 +381,7 @@ import Testing
         await settled(model)
         #expect(model.route.phase == .lookupsOff)
         #expect(service.count == 0)
-        model.route.turnOnLookups()
-        #expect(settings.trace.lookUpASNs)
-        await settled(model)
-        #expect(model.route.phase == .done)
+        #expect(model.route.pathStatus == .hidden && model.route.exportLine == nil)
     }
 
     @Test func lookupsOffStillAllowsBGPChain() async {
@@ -411,7 +429,8 @@ import Testing
         await load(model)
         await settled(model)
         #expect(model.route.chain?.nodes.map(\.role) == [.youAndDestination])
-        #expect(model.route.statusTitle.contains("is on your own network"))
+        #expect(model.route.pathStatus == .shown)
+        #expect(model.route.pathOverlay.asns == [15169])
     }
 
     @Test func privateTargetsNeverStartARoute() {

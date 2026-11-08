@@ -15,7 +15,6 @@ public struct BGPMapView: View {
     @Environment(\.dynamicTypeSize) private var typeSize
     @State private var showDetails = false
     @State private var appliedDefaultMode = false
-    @State private var showLegend = false
 
     public init(model: BGPMapModel) {
         self.model = model
@@ -41,18 +40,16 @@ public struct BGPMapView: View {
         .sheet(isPresented: pickerBinding) { picker }
         .sheet(isPresented: detailsSheetBinding) { detailsSheet }
         .inspector(isPresented: inspectorBinding) {
-            detailContent
-                .inspectorColumnWidth(min: 280, ideal: 340, max: 420)
+            if let selection = model.selection {
+                ASDetailView(model: model, id: selection)
+                    .inspectorColumnWidth(min: 280, ideal: 340, max: 420)
+            }
         }
-        .sheet(isPresented: $showLegend) { GraphLegendSheet(showsYou: model.myASN != nil) }
         .task { model.consumeRouterRequest() }
         .onChange(of: model.router.selectedTool) { _, tool in if tool == .bgp { model.consumeRouterRequest() } }
         .onChange(of: model.router.requestTick) { model.consumeRouterRequest() }
         .onChange(of: model.detailsToken) { _, _ in if !isRegular { showDetails = true } }
-        .onChange(of: model.selection) { _, new in if new == nil, model.route.selection == nil { showDetails = false } }
-        .onChange(of: model.route.selection) { _, new in
-            if new == nil, model.selection == nil { showDetails = false } else if new != nil, !isRegular { showDetails = true }
-        }
+        .onChange(of: model.selection) { _, new in if new == nil { showDetails = false } }
         .onAppear {
             if voiceOver, !appliedDefaultMode { model.displayMode = .list }
             appliedDefaultMode = true
@@ -117,43 +114,14 @@ public struct BGPMapView: View {
     }
 
     private var loaded: some View {
-        VStack(spacing: 8) {
-            PrefixHeaderCard(result: model.result, hostLine: model.hostLine) { asn in
-                model.requestDetails(for: .asn(asn))
-            }
-            Picker("View", selection: $model.view) {
-                Text("Your route").tag(BGPView.yourRoute)
-                Text("All routes").tag(BGPView.allRoutes).accessibilityLabel("All routes worldwide")
-            }
-            .pickerStyle(.segmented)
-            .padding(.horizontal)
-            switch model.view {
-            case .yourRoute:
-                YourRouteView(model: model)
-            case .allRoutes:
-                allRoutes
-            }
-        }
-        .padding(.top, 8)
-    }
-
-    private var allRoutes: some View {
-        ViewThatFits(in: .vertical) {
-            allRoutesContent(scrolling: false)
-            ScrollView {
-                allRoutesContent(scrolling: true)
-            }
-            .scrollBounceBehavior(.basedOnSize)
-        }
-    }
-
-    /// `scrolling`: the content is taller than the screen, so the canvas keeps its minimum height and the page scrolls.
-    private func allRoutesContent(scrolling: Bool) -> some View {
-        let canvasMin: CGFloat = isRegular ? 360 : 300
-        return VStack(spacing: 8) {
-            if let result = model.result, let summary = model.summary {
-                AllRoutesSummaryCard(result: result, summary: summary, myNetwork: model.myNetwork, mode: $model.displayMode,
-                                     showUpdated: isRegular, compact: !isRegular) { model.view = .yourRoute }
+        VStack(spacing: 6) {
+            headerRow
+            if model.headerExpanded {
+                PrefixHeaderCard(result: model.result, hostLine: model.hostLine, showUpdated: isRegular,
+                                 yourPath: model.route.pathStatus, onYourPath: { model.openYourPath() }) { asn in
+                    model.requestDetails(for: .asn(asn))
+                }
+                .transition(.opacity.combined(with: .move(edge: .top)))
             }
             if model.displayMode == .graph, typeSize >= .accessibility1 {
                 Label("Larger text works best in List view", systemImage: "list.bullet")
@@ -162,20 +130,13 @@ public struct BGPMapView: View {
             ZStack(alignment: .bottom) {
                 switch model.displayMode {
                 case .graph:
-                    VStack(spacing: 6) {
-                        GraphCanvasView(model: model)
-                            .frame(minHeight: canvasMin)
-                            .layoutPriority(1)
-                        GraphLegend(showsYou: model.myASN != nil, onFit: { model.requestFit() }) { showLegend = true }
-                    }
-                    .padding(.horizontal).padding(.bottom, 8)
+                    GraphCanvasView(model: model).padding(.horizontal).padding(.bottom, 8)
                 case .list:
                     BGPListView(model: model)
-                        .frame(minHeight: scrolling ? 360 : 0)
                 }
                 if !isRegular, let selection = model.selection, let result = model.result,
                    let summary = model.stats?.summary(for: selection, graph: result.graph) {
-                    SelectionCard(summary: summary, holder: summary.asn.flatMap { result.holder(of: $0) }) {
+                    SelectionCard(summary: summary, holder: summary.asn.flatMap { model.holder(of: $0) }) {
                         showDetails = true
                     }
                     .padding(.bottom, 12)
@@ -184,20 +145,58 @@ public struct BGPMapView: View {
             }
             .animation(.snappy, value: model.selection)
         }
+        .padding(.top, 4)
     }
 
-    /// What the sheet / inspector shows: the selected chain node in Your route, else the selected graph node.
-    @ViewBuilder private var detailContent: some View {
-        if model.view == .yourRoute, let id = model.route.selection,
-           let node = model.route.chain?.nodes.first(where: { $0.id == id }) {
-            ASDetailView(model: model, routeNode: node)
-        } else if let selection = model.selection {
-            ASDetailView(model: model, id: selection)
+    /// One compact line: prefix, origin, your-path status, Graph/List, Fit and the details button.
+    private var headerRow: some View {
+        HStack(spacing: 8) {
+            Button { toggleHeader() } label: {
+                PrefixCompactLabel(prefix: model.result?.prefix ?? "", origin: originText, yourPath: model.route.pathStatus)
+                    .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .accessibilityElement(children: .combine)
+            .accessibilityHint(Text(model.headerExpanded ? "Hides details" : "Shows details"))
+            Picker("View", selection: $model.displayMode) {
+                Text("Graph").tag(BGPMapModel.DisplayMode.graph)
+                Text("List").tag(BGPMapModel.DisplayMode.list)
+            }
+            .pickerStyle(.segmented)
+            .controlSize(.small)
+            .fixedSize()
+            if model.displayMode == .graph {
+                Button { model.requestFit() } label: {
+                    Image(systemName: "arrow.up.left.and.arrow.down.right").font(.footnote.weight(.semibold))
+                        .frame(width: 28, height: 28)
+                }
+                .buttonStyle(.plain)
+                .accessibilityLabel(Text("Fit graph to screen"))
+            }
+            Button { toggleHeader() } label: {
+                Image(systemName: model.headerExpanded ? "chevron.up" : "info.circle")
+                    .frame(width: 28, height: 28)
+            }
+            .buttonStyle(.plain)
+            .accessibilityLabel(Text(model.headerExpanded ? "Hide details" : "Show details"))
         }
+        .frame(minHeight: 30)
+        .padding(.horizontal)
     }
 
-    private var hasDetailSelection: Bool {
-        (model.view == .yourRoute && model.route.selection != nil) || model.selection != nil
+    private var originText: String {
+        guard let result = model.result, let asn = result.originASNs.first else { return "" }
+        var text = "AS\(asn)"
+        if result.originASNs.count > 1 {
+            text += " +\(result.originASNs.count - 1)"
+        } else if let name = BGPText.shortName(model.holder(of: asn)) {
+            text += " \(name)"
+        }
+        return text
+    }
+
+    private func toggleHeader() {
+        withAnimation(.snappy) { model.headerExpanded.toggle() }
     }
 
     // MARK: Sheets
@@ -216,19 +215,20 @@ public struct BGPMapView: View {
     }
 
     private var detailsSheetBinding: Binding<Bool> {
-        Binding(get: { showDetails && !isRegular && hasDetailSelection },
-                set: { showDetails = $0; if !$0 { model.route.selection = nil } })
+        Binding(get: { showDetails && !isRegular && model.selection != nil }, set: { showDetails = $0 })
     }
 
     @ViewBuilder private var detailsSheet: some View {
-        detailContent
-            .presentationDetents([.medium, .large])
-            .presentationDragIndicator(.visible)
+        if let selection = model.selection {
+            ASDetailView(model: model, id: selection)
+                .presentationDetents([.medium, .large])
+                .presentationDragIndicator(.visible)
+        }
     }
 
     private var inspectorBinding: Binding<Bool> {
-        Binding(get: { isRegular && hasDetailSelection && model.phase == .loaded },
-                set: { if !$0 { model.selection = nil; model.route.selection = nil } })
+        Binding(get: { isRegular && model.selection != nil && model.phase == .loaded },
+                set: { if !$0 { model.selection = nil } })
     }
 
     // MARK: Toolbar
@@ -251,10 +251,10 @@ public struct BGPMapView: View {
                     Label("Show per column", systemImage: "ellipsis.circle")
                 }
             }
-            .disabled(model.result == nil || model.view == .yourRoute)
+            .disabled(model.result == nil)
             Menu {
                 ShareLink(item: model.exportText) { Label("Share as text", systemImage: "text.alignleft") }
-                if model.view == .allRoutes, let result = model.result, let layout = model.layout, !layout.frames.isEmpty {
+                if let result = model.result, let layout = model.layout, !layout.frames.isEmpty {
                     ShareLink(item: GraphImageExport(result: result, layout: layout),
                               preview: SharePreview("BGP graph for \(result.prefix)")) {
                         Label("Share as image", systemImage: "photo")
@@ -263,7 +263,7 @@ public struct BGPMapView: View {
             } label: {
                 Label("Share", systemImage: "square.and.arrow.up")
             }
-            .disabled(model.result == nil || (model.view == .yourRoute && model.route.chain == nil))
+            .disabled(model.result == nil)
         }
     }
 }

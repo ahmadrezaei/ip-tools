@@ -32,7 +32,7 @@ struct BGPListView: View {
     }
 
     private func originSection(result: BGPResult, stats: BGPStats) -> some View {
-        Section("Destination") {
+        Section("Origin") {
             ForEach(result.originASNs, id: \.self) { asn in row(asn, result: result, stats: stats) }
         }
     }
@@ -52,7 +52,7 @@ struct BGPListView: View {
                     Button("Show all \(members.count)") { expandedLayers.insert(layer) }
                 }
             } header: {
-                Text(BGPText.sectionTitle(layer: layer, originName: BGPText.originName(result), count: members.count))
+                Text("\(BGPText.hops(layer)) · \(members.count) ASes")
             }
         }
     }
@@ -62,16 +62,19 @@ struct BGPListView: View {
         let role = stats.role(of: asn)
         let summary = BGPStats.Summary(id: .asn(asn), asn: asn, role: role, paths: count, fraction: stats.fraction(count),
                                        hops: stats.layer[asn] ?? 0, collapsed: [])
+        let onPath = result.graph.highlightPathNodeIDs.contains(.asn(asn))
+        let prefix = asn == model.myASN ? String(localized: "Your network, ")
+            : (onPath ? String(localized: "On your path, ") : "")
         return Button { model.requestDetails(for: .asn(asn)) } label: {
             VStack(alignment: .leading, spacing: 4) {
                 HStack(alignment: .firstTextBaseline) {
                     Text(verbatim: "AS\(asn)").font(.body.weight(.semibold)).monospacedDigit()
-                    if asn == model.myASN {
-                        Text("You").font(.caption2.weight(.bold)).foregroundStyle(.white)
+                    if onPath {
+                        Text("Your path").font(.caption2.weight(.bold)).foregroundStyle(.white)
                             .padding(.horizontal, 6).padding(.vertical, 1)
-                            .background(Capsule().fill(Color.green))
+                            .background(Capsule().fill(Color.blue))
                     }
-                    Text(BGPText.shortName(result.holder(of: asn)) ?? "")
+                    Text(BGPText.shortName(model.holder(of: asn)) ?? "")
                         .font(.subheadline).foregroundStyle(.secondary).lineLimit(1)
                     Spacer(minLength: 8)
                     Text(BGPText.roleName(role)).font(.caption).foregroundStyle(.secondary)
@@ -85,8 +88,7 @@ struct BGPListView: View {
         }
         .buttonStyle(.plain)
         .accessibilityElement(children: .ignore)
-        .accessibilityLabel((asn == model.myASN ? String(localized: "Your network, ") : "")
-                            + BGPText.accessibilityLabel(for: summary, names: result.names))
+        .accessibilityLabel(prefix + BGPText.accessibilityLabel(for: summary, names: result.names))
         .accessibilityAddTraits(.isButton)
     }
 

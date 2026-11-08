@@ -27,16 +27,23 @@ public struct GraphNode: Identifiable, Hashable, Sendable {
 
 public struct GraphEdge: Identifiable, Hashable, Sendable {
     public enum Kind: Sendable { case forward, lateral, backward }
+    /// How an edge takes part in the overlay path (the user's own route): a known hop, or the unknown stretch
+    /// between the last known network and the origin.
+    public enum Overlay: Sendable { case path, unknownSegment }
     public var id: String { "\(from)>\(to)" }
     public let from: NodeID, to: NodeID
+    /// Observed routes using this edge; 0 for an edge that exists only because of the overlay path.
     public let pathCount: Int
     public let kind: Kind
+    public let overlay: Overlay?
+    public var onHighlightPath: Bool { overlay != nil }
 
-    public init(from: NodeID, to: NodeID, pathCount: Int, kind: Kind) {
+    public init(from: NodeID, to: NodeID, pathCount: Int, kind: Kind, overlay: Overlay? = nil) {
         self.from = from
         self.to = to
         self.pathCount = pathCount
         self.kind = kind
+        self.overlay = overlay
     }
 }
 
@@ -71,6 +78,9 @@ public struct ASGraph: Sendable {
     public let cleanedPaths: [ObservedPath]
     /// Number of kept paths that had AS_SET tokens removed.
     public internal(set) var asSetPaths: Int = 0
+    /// Nodes on the overlay path (`GraphBuildOptions.highlightPath`). They may include ASes no observed path
+    /// contains; those have no path counts.
+    public let highlightPathNodeIDs: Set<NodeID>
 
     // Derived once at construction (single pass over `cleanedPaths` and `nodes`).
     /// Paths each ASN appears on (including ASNs hidden in a "+more" bucket).
@@ -89,7 +99,9 @@ public struct ASGraph: Sendable {
     private var nodeByASN: [UInt32: NodeID] = [:]
 
     public init(nodes: [GraphNode], edges: [GraphEdge], origins: [UInt32], totalPaths: Int,
-                discardedPaths: Int, layerCount: Int, cleanedPaths: [ObservedPath]) {
+                discardedPaths: Int, layerCount: Int, cleanedPaths: [ObservedPath],
+                highlightPathNodeIDs: Set<NodeID> = []) {
+        self.highlightPathNodeIDs = highlightPathNodeIDs
         self.nodes = nodes
         self.edges = edges
         self.origins = origins

@@ -4,9 +4,18 @@
 public struct GraphBuildOptions: Hashable, Sendable {
     public var maxNodesPerLayer: Int = 6       // 6 / 12 / 30
     public var pinned: Set<UInt32> = []        // never folded into "+N more" (DESIGN 6.12 item 4)
-    public init(maxNodesPerLayer: Int = 6, pinned: Set<UInt32> = []) {
+    /// The user's own path as ASNs from their side to the origin (`ASChain.asnSequence`). Drawn as an overlay:
+    /// every ASN is pinned, missing ASNs and edges are added without any route count, and nothing it adds
+    /// changes path counts, totals or collectors.
+    public var highlightPath: [UInt32] = []
+    /// The overlay path has an unknown stretch before the origin: its last hop is an `.unknownSegment`.
+    public var highlightPathHasGap = false
+    public init(maxNodesPerLayer: Int = 6, pinned: Set<UInt32> = [], highlightPath: [UInt32] = [],
+                highlightPathHasGap: Bool = false) {
         self.maxNodesPerLayer = maxNodesPerLayer
         self.pinned = pinned
+        self.highlightPath = highlightPath
+        self.highlightPathHasGap = highlightPathHasGap
     }
 }
 
@@ -84,6 +93,23 @@ public enum GraphBuilder {
             }
             frontier = next
         }
+
+        // 5b. Overlay path: ASNs that no observed path contains join the layer of their neighbour toward the
+        // origin plus one. A path that doesn't end at an origin is ignored.
+        let overlayPath = Self.dedupedOverlay(options.highlightPath)
+        var overlayValid = false
+        if let last = overlayPath.last, layer[last] == 0 {
+            overlayValid = true
+            var current = 0
+            for asn in overlayPath.dropLast().reversed() {
+                if let known = layer[asn] {
+                    current = known
+                } else {
+                    current += 1
+                    layer[asn] = current
+                }
+            }
+        }
         let maxLayer = layer.values.max() ?? 0
 
         // 6. Rank within each layer.
@@ -95,25 +121,28 @@ public enum GraphBuilder {
         }
 
         // 7. Collapse each non-origin layer to the top K plus a `.more` bucket.
+        var pins = options.pinned
+        if overlayValid { pins.formUnion(overlayPath) }
         var nodeOf: [UInt32: NodeID] = [:]
         var nodes: [GraphNode] = []
         for l in 0...maxLayer {
             let all = ranked[l] ?? []
             // Origin layer: sorted by pathCount (descending), never collapsed.
             let ordered = l == 0
-                ? all.sorted { pathCount[$0]! != pathCount[$1]! ? pathCount[$0]! > pathCount[$1]! : $0 < $1 }
+                ? all.sorted { pathCount[$0, default: 0] != pathCount[$1, default: 0]
+                    ? pathCount[$0, default: 0] > pathCount[$1, default: 0] : $0 < $1 }
                 : all
             // Pinned ASes (DESIGN 6.12 item 4) that fall beyond the top K are kept as extra nodes after the top K
             // and before the bucket. They never take a top-K slot and are never folded.
             var keep = l == 0 ? ordered : Array(ordered.prefix(k))
             var rest = l == 0 ? [] : Array(ordered.dropFirst(k))
-            if !options.pinned.isEmpty, !rest.isEmpty {
-                keep += rest.filter { options.pinned.contains($0) }
-                rest = rest.filter { !options.pinned.contains($0) }
+            if !pins.isEmpty, !rest.isEmpty {
+                keep += rest.filter { pins.contains($0) }
+                rest = rest.filter { !pins.contains($0) }
             }
             for asn in keep {
                 nodeOf[asn] = .asn(asn)
-                nodes.append(GraphNode(id: .asn(asn), layer: l, pathCount: pathCount[asn]!,
+                nodes.append(GraphNode(id: .asn(asn), layer: l, pathCount: pathCount[asn, default: 0],
                                        transitCount: transitCount[asn, default: 0], isOrigin: l == 0,
                                        isPeer: isPeer.contains(asn), collapsed: []))
             }
@@ -121,7 +150,7 @@ public enum GraphBuilder {
                 let id = NodeID.more(layer: l)
                 for asn in rest { nodeOf[asn] = id }
                 nodes.append(GraphNode(id: id, layer: l,
-                                       pathCount: rest.reduce(0) { $0 + pathCount[$1]! },
+                                       pathCount: rest.reduce(0) { $0 + pathCount[$1, default: 0] },
                                        transitCount: rest.reduce(0) { $0 + transitCount[$1, default: 0] },
                                        isOrigin: false, isPeer: rest.contains { isPeer.contains($0) },
                                        collapsed: rest))
@@ -137,6 +166,17 @@ public enum GraphBuilder {
             if from == to { continue }
             merged[NodePair(from: from, to: to), default: 0] += count
         }
+        // Overlay edges: flagged on an existing edge, or added with no routes.
+        var overlayEdges: [NodePair: GraphEdge.Overlay] = [:]
+        if overlayValid {
+            for (index, pair) in zip(overlayPath, overlayPath.dropFirst()).enumerated() {
+                let from = nodeOf[pair.0]!, to = nodeOf[pair.1]!
+                if from == to { continue }
+                let isLast = index == overlayPath.count - 2
+                overlayEdges[NodePair(from: from, to: to)] = isLast && options.highlightPathHasGap ? .unknownSegment : .path
+                merged[NodePair(from: from, to: to), default: 0] += 0
+            }
+        }
         func sortKey(_ id: NodeID) -> (Int, UInt32) {
             switch id {
             case .asn(let a): return (0, a)
@@ -146,7 +186,7 @@ public enum GraphBuilder {
         let edges: [GraphEdge] = merged.map { pair, count in
             let lf = layerOfNode[pair.from]!, lt = layerOfNode[pair.to]!
             let kind: GraphEdge.Kind = lf == lt + 1 ? .forward : (lf == lt ? .lateral : .backward)
-            return GraphEdge(from: pair.from, to: pair.to, pathCount: count, kind: kind)
+            return GraphEdge(from: pair.from, to: pair.to, pathCount: count, kind: kind, overlay: overlayEdges[pair])
         }.sorted { a, b in
             if a.pathCount != b.pathCount { return a.pathCount > b.pathCount }
             let fa = sortKey(a.from), fb = sortKey(b.from)
@@ -156,8 +196,15 @@ public enum GraphBuilder {
 
         // 8. Output.
         var graph = ASGraph(nodes: nodes, edges: edges, origins: origins, totalPaths: cleaned.count,
-                            discardedPaths: discarded, layerCount: maxLayer + 1, cleanedPaths: cleaned)
+                            discardedPaths: discarded, layerCount: maxLayer + 1, cleanedPaths: cleaned,
+                            highlightPathNodeIDs: overlayValid ? Set(overlayPath.map { NodeID.asn($0) }) : [])
         graph.asSetPaths = asSetPaths
         return graph
+    }
+
+    /// The overlay ASNs in order, without consecutive repeats and without any ASN seen earlier.
+    private static func dedupedOverlay(_ path: [UInt32]) -> [UInt32] {
+        var seen = Set<UInt32>()
+        return path.filter { seen.insert($0).inserted }
     }
 }

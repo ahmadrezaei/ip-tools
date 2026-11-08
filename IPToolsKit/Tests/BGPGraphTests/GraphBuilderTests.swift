@@ -293,4 +293,74 @@ import RIPEstat
         #expect(!h.nodes.contains(.asn(3)))
         #expect(h.edges.count == 2)
     }
+
+    // MARK: Overlay path (your path)
+
+    private func overlayGraph(_ options: GraphBuildOptions = .init(highlightPath: [24940, 13335, 15169])) -> ASGraph {
+        // 15169 is the origin; 13335 is in the data, 24940 is not.
+        GraphBuilder.build(from: repeated(3, [1, 13335, 15169]) + repeated(2, [2, 15169]), options: options)
+    }
+
+    @Test func overlayAsnsArePinnedAndPresent() {
+        let paths = (1...10).map { path(UInt32(100 + $0), 3356, 15169) }
+        let g = GraphBuilder.build(from: paths + [path(500, 15169)],
+                                   options: .init(maxNodesPerLayer: 1, highlightPath: [24940, 500, 15169]))
+        #expect(g.node(.asn(500)) != nil)               // would be folded without the overlay
+        #expect(g.node(.asn(24940)) != nil)
+        #expect(g.highlightPathNodeIDs == [.asn(24940), .asn(500), .asn(15169)])
+        #expect(g.nodes.filter { if case .more = $0.id { true } else { false } }.count <= 1)
+    }
+
+    @Test func overlayEdgesAreFlaggedAndHaveNoRoutes() {
+        let g = overlayGraph()
+        let you = g.edge(.asn(24940), .asn(13335))
+        #expect(you?.onHighlightPath == true && you?.pathCount == 0 && you?.overlay == .path)
+        let existing = g.edge(.asn(13335), .asn(15169))
+        #expect(existing?.overlay == .path && existing?.pathCount == 3)    // an observed edge keeps its count
+        #expect(g.edge(.asn(2), .asn(15169))?.onHighlightPath == false)
+        #expect(g.highlightPathNodeIDs == [.asn(24940), .asn(13335), .asn(15169)])
+    }
+
+    @Test func overlayDoesNotChangeStats() {
+        let plain = overlayGraph(.init())
+        let g = overlayGraph()
+        #expect(g.totalPaths == plain.totalPaths && g.discardedPaths == plain.discardedPaths)
+        #expect(g.pathCounts == plain.pathCounts && g.transitCounts == plain.transitCounts)
+        #expect(g.collectorsByASN == plain.collectorsByASN)
+        #expect(g.pathGroups == plain.pathGroups && g.origins == plain.origins)
+        #expect(g.pathCounts[24940] == nil)
+        #expect(g.node(.asn(24940))?.pathCount == 0)
+        #expect(plain.highlightPathNodeIDs.isEmpty && plain.edges.allSatisfy { !$0.onHighlightPath })
+    }
+
+    @Test func overlayOnlyNodesLandOneLayerBeyondTheirNeighbour() {
+        // 13335 is at layer 1; You is beyond it at layer 2, and the graph grew by that layer.
+        let g = overlayGraph()
+        #expect(g.node(.asn(13335))?.layer == 1)
+        #expect(g.node(.asn(24940))?.layer == 2)
+        #expect(g.layerCount == 3)
+        // Neither is in the data: both are placed by distance to the origin along the path.
+        let both = GraphBuilder.build(from: [path(1, 15169)], options: .init(highlightPath: [24940, 13335, 15169]))
+        #expect(both.node(.asn(13335))?.layer == 1 && both.node(.asn(24940))?.layer == 2)
+        #expect(both.edge(.asn(24940), .asn(13335))?.kind == .forward)
+        #expect(both.node(.asn(24940))?.isOrigin == false && both.node(.asn(24940))?.isPeer == false)
+    }
+
+    @Test func gapMarksTheLastHopUnknown() {
+        let g = overlayGraph(.init(highlightPath: [24940, 13335, 15169], highlightPathHasGap: true))
+        #expect(g.edge(.asn(24940), .asn(13335))?.overlay == .path)
+        #expect(g.edge(.asn(13335), .asn(15169))?.overlay == .unknownSegment)
+    }
+
+    @Test func overlayThatDoesNotEndAtAnOriginIsIgnored() {
+        let g = overlayGraph(.init(highlightPath: [24940, 13335]))
+        #expect(g.node(.asn(24940)) == nil && g.highlightPathNodeIDs.isEmpty)
+        #expect(g.edges.allSatisfy { !$0.onHighlightPath })
+    }
+
+    @Test func overlayBuildIsDeterministic() {
+        let options = GraphBuildOptions(highlightPath: [24940, 13335, 15169])
+        let a = overlayGraph(options), b = overlayGraph(options)
+        #expect(a.nodes == b.nodes && a.edges == b.edges)
+    }
 }

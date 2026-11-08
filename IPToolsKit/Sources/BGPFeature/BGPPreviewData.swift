@@ -10,8 +10,7 @@ import RIPEstat
 import SharedUI
 import SwiftUI
 
-/// Hand-made graph, layout and models for previews and tests. It does not depend on `GraphBuilder` /
-/// `LayeredLayout`, so the UI can be exercised on its own.
+/// Hand-made graph and models for previews and tests.
 @MainActor enum BGPPreviewData {
     static let names: [UInt32: String] = MockRIPEstat.sampleNames.merging([
         64500: "EXAMPLE-ONE Example One Networks", 64501: "EXAMPLE-TWO Example Two Ltd",
@@ -84,34 +83,7 @@ import SwiftUI
 
     /// Simple columns-by-layer layout with the spec's metrics and curves.
     static func layout(_ graph: ASGraph, metrics m: LayoutMetrics = .init()) -> GraphLayout {
-        let maxLayer = graph.layerCount - 1
-        let columns = (0...maxLayer).map { l in graph.nodes.filter { $0.layer == l } }
-        let tallest = columns.map(\.count).max() ?? 1
-        let columnHeight = CGFloat(tallest) * m.nodeSize.height + CGFloat(max(tallest - 1, 0)) * m.rowSpacing
-        var frames: [NodeID: CGRect] = [:]
-        for (l, nodes) in columns.enumerated() {
-            let x = m.padding + CGFloat(maxLayer - l) * (m.nodeSize.width + m.columnSpacing)
-            let h = CGFloat(nodes.count) * m.nodeSize.height + CGFloat(max(nodes.count - 1, 0)) * m.rowSpacing
-            let top = m.padding + m.headerHeight + (columnHeight - h) / 2
-            for (i, node) in nodes.enumerated() {
-                frames[node.id] = CGRect(x: x, y: top + CGFloat(i) * (m.nodeSize.height + m.rowSpacing),
-                                         width: m.nodeSize.width, height: m.nodeSize.height)
-            }
-        }
-        let edges = graph.edges.compactMap { edge -> EdgeGeometry? in
-            guard let a = frames[edge.from], let b = frames[edge.to] else { return nil }
-            let start = CGPoint(x: a.maxX, y: a.midY), end = CGPoint(x: b.minX, y: b.midY)
-            let mx = (start.x + end.x) / 2
-            return EdgeGeometry(id: edge.id, start: start, control1: CGPoint(x: mx, y: start.y), control2: CGPoint(x: mx, y: end.y),
-                                end: end, lineWidth: 1.5 + 6 * (Double(edge.pathCount) / Double(max(graph.totalPaths, 1))).squareRoot(),
-                                kind: edge.kind)
-        }
-        let size = CGSize(width: m.padding * 2 + CGFloat(maxLayer + 1) * m.nodeSize.width + CGFloat(maxLayer) * m.columnSpacing,
-                          height: m.padding * 2 + m.headerHeight + columnHeight)
-        let headers = (0...maxLayer).map { l in
-            (layer: l, centerX: m.padding + CGFloat(maxLayer - l) * (m.nodeSize.width + m.columnSpacing) + m.nodeSize.width / 2)
-        }
-        return GraphLayout(size: size, frames: frames, edges: edges, columnHeaders: headers)
+        LayeredLayout.layout(graph, metrics: m)
     }
 
     static func result(k: Int = 4, prefix: String = "1.1.1.0/24") -> (BGPResult, GraphLayout) {
@@ -145,7 +117,6 @@ extension BGPMapModel {
     func installPreview(result: BGPResult, layout: GraphLayout) {
         install(result: result, layout: layout)
         setPreviewPhase(.loaded, failure: nil)
-        updateSummary()
     }
 
     func setPreviewPhase(_ phase: Phase, failure: BGPFailure?) {
@@ -217,16 +188,22 @@ extension BGPMapModel {
     static let own = ASChain(nodes: [ASChain.Node(asn: 15169, role: .youAndDestination, provenance: .bgp, routeCount: 3)],
                              source: .bgp(collectors: ["RRC01"]), completion: .complete, reachedTarget: false)
 
+    /// A loaded map whose graph carries the overlay of `chain`, built the way the model builds it.
     static func model(_ phase: YourRouteModel.Phase, _ chain: ASChain?, mine: MyNetwork? = me,
-                      view: BGPView = .yourRoute) -> BGPMapModel {
+                      expanded: Bool = false) -> BGPMapModel {
         BGPPreviewData.model { model in
-            let (result, layout) = BGPPreviewData.result(prefix: "8.8.8.0/24")
             model.targetText = "8.8.8.8"
             model.route.setMyNetwork(mine)
-            model.installPreview(result: result, layout: layout)
-            model.view = view
             model.route.installPreview(phase: phase, chain: chain, context: context(), names: names, myNetwork: mine,
                                        hops: youHops + cloudflareHops + (8...12).map { ChainHop(ttl: $0, kind: .silent) })
+            let overlay = model.route.pathOverlay
+            let options = GraphBuildOptions(maxNodesPerLayer: 4, highlightPath: overlay.asns, highlightPathHasGap: overlay.hasGap)
+            let graph = GraphBuilder.build(from: BGPPreviewData.paths, options: options)
+            let collectors = (0..<5).map { LookingGlass.Collector(id: String(format: "RRC%02d", $0), location: "Somewhere") }
+            let result = BGPResult(prefix: "8.8.8.0/24", origins: [ASHolder(asn: 15169, holder: names[15169] ?? "")], graph: graph,
+                                   collectors: collectors, visibility: nil, latestTime: Date(), names: names)
+            model.installPreview(result: result, layout: LayeredLayout.layout(graph))
+            model.headerExpanded = expanded
         }
     }
 }
@@ -279,48 +256,27 @@ extension BGPMapModel {
     ASDetailView(model: BGPPreviewData.loadedModel(selection: .asn(3356)), id: .asn(3356))
 }
 
-// MARK: Your route
+// MARK: Your path
 
-#Preview("Route: done") { NavigationStack { BGPMapView(model: BGPRoutePreviewData.model(.done, BGPRoutePreviewData.done)) } }
-#Preview("Route: handed over") { NavigationStack { BGPMapView(model: BGPRoutePreviewData.model(.done, BGPRoutePreviewData.handedOver)) } }
-#Preview("Route: measuring") { NavigationStack { BGPMapView(model: BGPRoutePreviewData.model(.measuring(ttl: 6), BGPRoutePreviewData.measuring)) } }
-#Preview("Route: locating") { NavigationStack { BGPMapView(model: BGPRoutePreviewData.model(.locating, nil)) } }
-#Preview("Route: seen in BGP") { NavigationStack { BGPMapView(model: BGPRoutePreviewData.model(.done, BGPRoutePreviewData.bgp)) } }
-#Preview("Route: gap") {
+#Preview("Path: done") { NavigationStack { BGPMapView(model: BGPRoutePreviewData.model(.done, BGPRoutePreviewData.done)) } }
+#Preview("Path: expanded") {
+    NavigationStack { BGPMapView(model: BGPRoutePreviewData.model(.done, BGPRoutePreviewData.done, expanded: true)) }
+}
+#Preview("Path: measuring") { NavigationStack { BGPMapView(model: BGPRoutePreviewData.model(.measuring(ttl: 6), BGPRoutePreviewData.measuring)) } }
+#Preview("Path: seen in BGP") { NavigationStack { BGPMapView(model: BGPRoutePreviewData.model(.done, BGPRoutePreviewData.bgp)) } }
+#Preview("Path: gap") {
     NavigationStack { BGPMapView(model: BGPRoutePreviewData.model(.partial("Traceroute couldn't see past hop 7"), BGPRoutePreviewData.gap)) }
 }
-#Preview("Route: stitched") {
+#Preview("Path: stitched") {
     NavigationStack { BGPMapView(model: BGPRoutePreviewData.model(.partial("Traceroute stopped in Arelion at hop 9"), BGPRoutePreviewData.stitched)) }
 }
-#Preview("Route: stopped") {
-    NavigationStack { BGPMapView(model: BGPRoutePreviewData.model(.stopped("Stopped at hop 6"), BGPRoutePreviewData.measuring)) }
+#Preview("Path: own network") { NavigationStack { BGPMapView(model: BGPRoutePreviewData.model(.done, BGPRoutePreviewData.own)) } }
+#Preview("Path: list") {
+    NavigationStack { BGPMapView(model: BGPRoutePreviewData.model(.done, BGPRoutePreviewData.done).withMode(.list)) }
 }
-#Preview("Route: no answer") {
-    NavigationStack { BGPMapView(model: BGPRoutePreviewData.model(.partial("No router on the way answered"), BGPRoutePreviewData.noAnswer)) }
+#Preview("Path: details") {
+    ASDetailView(model: BGPRoutePreviewData.model(.done, BGPRoutePreviewData.done), id: .asn(13335))
 }
-#Preview("Route: own network") { NavigationStack { BGPMapView(model: BGPRoutePreviewData.model(.done, BGPRoutePreviewData.own)) } }
-#Preview("Route: lookups off") { NavigationStack { BGPMapView(model: BGPRoutePreviewData.model(.lookupsOff, nil)) } }
-#Preview("Route: unavailable") { NavigationStack { BGPMapView(model: BGPRoutePreviewData.model(.unavailable, nil)) } }
-#Preview("Route: failed") {
-    NavigationStack {
-        BGPMapView(model: BGPRoutePreviewData.model(.failed("No IPv6 route — this network doesn't support IPv6."), nil))
-    }
-}
-#Preview("Route: details") {
-    ASDetailView(model: BGPRoutePreviewData.model(.done, BGPRoutePreviewData.done), routeNode: BGPRoutePreviewData.cloudflare)
-}
-
-// MARK: All routes
-
-#Preview("All routes") {
-    NavigationStack { BGPMapView(model: BGPRoutePreviewData.model(.done, BGPRoutePreviewData.done, view: .allRoutes)) }
-}
-#Preview("All routes, list") {
-    NavigationStack {
-        BGPMapView(model: BGPRoutePreviewData.model(.done, BGPRoutePreviewData.done, view: .allRoutes).withMode(.list))
-    }
-}
-#Preview("Legend") { GraphLegendSheet(showsYou: true) }
 
 extension BGPMapModel {
     func withMode(_ mode: DisplayMode) -> BGPMapModel {

@@ -10,6 +10,8 @@ struct NodeView: View {
     let name: String?
     var isSelected = false
     var isDimmed = false
+    /// On the overlay path (your path): blue outline.
+    var isOnPath = false
     var isYou = false
 
     private var isOrigin: Bool { node.isOrigin }
@@ -26,14 +28,14 @@ struct NodeView: View {
                     .padding(5)
             }
         }
-        .overlay { if isYou { shape.strokeBorder(Color.green, lineWidth: 2) } }
+        .overlay { if isOnPath { shape.strokeBorder(Color.blue, lineWidth: 2) } }
         .overlay(alignment: .topLeading) {
             if isYou {
                 Text("YOU")
                     .font(.caption2.weight(.bold))
                     .foregroundStyle(.white)
                     .padding(.horizontal, 5).padding(.vertical, 1)
-                    .background(Capsule().fill(Color.green))
+                    .background(Capsule().fill(Color.blue))
                     .offset(x: -4, y: -7)
             }
         }

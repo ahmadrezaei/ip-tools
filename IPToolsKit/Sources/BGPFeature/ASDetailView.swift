@@ -8,65 +8,33 @@ import SwiftUI
 /// Details of one AS (or a "+more" bucket). Sheet on iPhone, inspector on iPad.
 struct ASDetailView: View {
     let model: BGPMapModel
-    let id: NodeID?
-    var routeNode: ASChain.Node?
+    let id: NodeID
 
     @State private var showAllPaths = false
     @Environment(\.openURL) private var openURL
 
     private static let pathLimit = 50
 
-    init(model: BGPMapModel, id: NodeID) {
-        self.model = model
-        self.id = id
-        self.routeNode = nil
-    }
-
-    /// A node of Your route; works for ASNs that aren't in the graph.
-    init(model: BGPMapModel, routeNode: ASChain.Node) {
-        self.model = model
-        self.id = routeNode.asn.map { NodeID.asn($0) }
-        self.routeNode = routeNode
+    /// This AS on the user's measured path, with its hops.
+    private var routeNode: ASChain.Node? {
+        guard let asn = id.asnValue else { return nil }
+        return model.route.chain?.nodes.first { $0.asn == asn && $0.provenance != .expected }
     }
 
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 16) {
                 if let routeNode { OnYourRouteSection(node: routeNode, model: model) }
-                if let result = model.result, let stats = model.stats, let id,
+                if let result = model.result, let stats = model.stats,
                    let summary = stats.summary(for: id, graph: result.graph) {
                     content(result: result, stats: stats, summary: summary)
-                } else if let result = model.result, let asn = id?.asnValue {
-                    notInGraph(asn, result: result)
-                } else if routeNode == nil {
+                } else {
                     ContentUnavailableView("No details", systemImage: "questionmark.circle")
                 }
             }
             .padding()
             .frame(maxWidth: .infinity, alignment: .leading)
         }
-    }
-
-    /// An AS that no RIS route passes through (for example Cloudflare for 8.8.8.0/24).
-    @ViewBuilder
-    private func notInGraph(_ asn: UInt32, result: BGPResult) -> some View {
-        VStack(alignment: .leading, spacing: 2) {
-            Text("SELECTED AS").font(.caption.weight(.semibold)).foregroundStyle(.secondary)
-            Text(verbatim: "AS\(asn)").font(.title2.bold()).monospacedDigit()
-            if let holder = model.holder(of: asn) {
-                Text(holder).font(.subheadline).foregroundStyle(.secondary).textSelection(.enabled)
-            }
-        }
-        VStack(alignment: .leading, spacing: 4) {
-            Text("In BGP routes to \(result.prefix)").font(.caption).foregroundStyle(.secondary)
-            Text("Not in any of the \(result.graph.totalPaths) RIS routes").font(.headline)
-            Text("Traceroute shows the real path; RIPE collectors only see part of the Internet.")
-                .font(.footnote).foregroundStyle(.secondary)
-        }
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .padding(10)
-        .background(RoundedRectangle(cornerRadius: 12, style: .continuous).fill(Color.primary.opacity(0.06)))
-        actions(asn)
     }
 
     @ViewBuilder
@@ -84,7 +52,7 @@ struct ASDetailView: View {
             Text("SELECTED AS").font(.caption.weight(.semibold)).foregroundStyle(.secondary)
             if let asn = summary.asn {
                 Text(verbatim: "AS\(asn)").font(.title2.bold()).monospacedDigit()
-                if let holder = result.holder(of: asn) {
+                if let holder = model.holder(of: asn) {
                     Text(holder).font(.subheadline).foregroundStyle(.secondary).textSelection(.enabled)
                 }
             } else {
@@ -142,7 +110,7 @@ struct ASDetailView: View {
                 Button { model.promote(asn) } label: {
                     HStack {
                         Text(verbatim: "AS\(asn)").font(.subheadline.weight(.semibold)).monospacedDigit()
-                        Text(BGPText.shortName(result.holder(of: asn)) ?? "")
+                        Text(BGPText.shortName(model.holder(of: asn)) ?? "")
                             .font(.subheadline).foregroundStyle(.secondary).lineLimit(1)
                         Spacer()
                         Text("\(stats.pathCount[asn] ?? 0) paths").font(.footnote).foregroundStyle(.secondary)
@@ -266,7 +234,7 @@ struct OnYourRouteSection: View {
         .frame(maxWidth: .infinity, alignment: .leading)
     }
 
-    private var roleText: String { RouteText.role(node.role, .detail) }
+    private var roleText: String { RouteText.role(node.role) }
 
     private func tile(_ title: String, _ value: String, detail: String?) -> some View {
         VStack(alignment: .leading, spacing: 2) {

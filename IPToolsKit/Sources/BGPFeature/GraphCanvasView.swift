@@ -4,13 +4,13 @@
 import BGPGraph
 import SwiftUI
 
-/// Edges and column headers, drawn in one `Canvas` under the given pan/zoom transform.
+/// Edges and row captions, drawn in one `Canvas` under the given pan/zoom transform.
 struct GraphEdgesLayer: View {
     let layout: GraphLayout
     let highlight: BGPHighlight?
+    /// Dim the overlay path (a node is selected that is not on it).
+    var overlayDimmed = false
     var zoom = ZoomPanState()
-    var metrics = LayoutMetrics()
-    var originName: String?
 
     var body: some View {
         Canvas { context, _ in
@@ -20,21 +20,27 @@ struct GraphEdgesLayer: View {
             let (normal, lit) = partition()
             for edge in normal { stroke(edge, lit: false, in: &context) }
             for edge in lit { stroke(edge, lit: true, in: &context) }
+            for edge in layout.edges where edge.overlay != nil { strokeOverlay(edge, in: &context) }
         }
         .allowsHitTesting(false)
         .accessibilityHidden(true)
     }
 
     private func partition() -> ([EdgeGeometry], [EdgeGeometry]) {
-        let sorted = layout.edges.sorted { $0.lineWidth < $1.lineWidth }
+        // Overlay edges are drawn by `strokeOverlay`, on top, at least as wide as the edge they replace.
+        let sorted = layout.edges.filter { $0.overlay == nil }.sorted { $0.lineWidth < $1.lineWidth }
         guard let highlight else { return (sorted, []) }
         return (sorted.filter { !highlight.edges.contains($0.id) }, sorted.filter { highlight.edges.contains($0.id) })
     }
 
-    private func stroke(_ edge: EdgeGeometry, lit: Bool, in context: inout GraphicsContext) {
+    private func curve(_ edge: EdgeGeometry) -> Path {
         var path = Path()
         path.move(to: edge.start)
         path.addCurve(to: edge.end, control1: edge.control1, control2: edge.control2)
+        return path
+    }
+
+    private func stroke(_ edge: EdgeGeometry, lit: Bool, in context: inout GraphicsContext) {
         let color: Color
         if lit {
             color = .accentColor
@@ -44,14 +50,27 @@ struct GraphEdgesLayer: View {
         let width = edge.lineWidth + (lit ? 1 : 0)
         var style = StrokeStyle(lineWidth: width, lineCap: .round)
         if edge.kind != .forward { style.dash = [5, 4] }
-        context.stroke(path, with: .color(color), style: style)
+        context.stroke(curve(edge), with: .color(color), style: style)
+    }
+
+    /// Your path: system blue, solid for known hops and dashed for the unknown stretch.
+    private func strokeOverlay(_ edge: EdgeGeometry, in context: inout GraphicsContext) {
+        var style = StrokeStyle(lineWidth: edge.lineWidth, lineCap: .round)
+        if edge.overlay == .unknownSegment { style.dash = [7, 5] }
+        let opacity = overlayDimmed ? 0.2 : 1.0
+        context.stroke(curve(edge), with: .color(Color.blue.opacity(opacity)), style: style)
     }
 
     private func drawHeaders(_ context: inout GraphicsContext) {
-        for header in layout.columnHeaders {
-            let title = BGPText.columnTitle(layer: header.layer, originName: originName)
+        for header in layout.rowHeaders {
+            let title: String
+            switch header.layer {
+            case 0: title = String(localized: "ORIGIN")
+            case 1: title = String(localized: "1 HOP")
+            default: title = String(localized: "\(header.layer) HOPS")
+            }
             let text = Text(title).font(.caption2.weight(.semibold)).foregroundStyle(.secondary)
-            context.draw(text, at: CGPoint(x: header.centerX, y: metrics.padding + metrics.headerHeight / 2), anchor: .center)
+            context.draw(text, at: CGPoint(x: header.minX, y: header.centerY), anchor: .leading)
         }
     }
 }
@@ -104,21 +123,20 @@ struct GraphCanvasView: View {
                 .contentShape(Rectangle())
                 .gesture(SpatialTapGesture(count: 2).onEnded { toggleFit(at: $0.location) })
                 .gesture(SpatialTapGesture(count: 1).onEnded { _ in model.selection = nil })
-            GraphEdgesLayer(layout: layout, highlight: model.highlight, zoom: zoom, originName: BGPText.originName(result))
+            GraphEdgesLayer(layout: layout, highlight: model.highlight, overlayDimmed: model.overlayDimmed, zoom: zoom)
             ZStack(alignment: .topLeading) {
                 ForEach(nodes) { node in
                     if let frame = layout.frames[node.id], let summary = stats?.summary(for: node.id, graph: result.graph) {
-                        let name = node.id.asnValue.flatMap { BGPText.shortName(result.holder(of: $0)) }
+                        let name = node.id.asnValue.flatMap { BGPText.shortName(model.holder(of: $0)) }
                         Button { tap(node) } label: {
                             NodeView(node: node, name: name, isSelected: selectedID == node.id,
                                      isDimmed: model.highlight.map { !$0.nodes.contains(node.id) } ?? false,
-                                     isYou: isYou(node))
+                                     isOnPath: result.graph.highlightPathNodeIDs.contains(node.id), isYou: isYou(node))
                         }
                         .buttonStyle(.plain)
                         .frame(width: frame.width, height: frame.height)
                         .position(x: frame.midX, y: frame.midY)
-                        .accessibilityLabel((isYou(node) ? String(localized: "Your network, ") : "")
-                                            + BGPText.accessibilityLabel(for: summary, names: result.names))
+                        .accessibilityLabel(nodeLabel(node, summary: summary, result: result))
                         .accessibilityHint(Text("Double-tap to highlight its paths"))
                         .accessibilityAddTraits(selectedID == node.id ? .isSelected : [])
                         .accessibilitySortPriority(order[node.id] ?? 0)
@@ -135,8 +153,25 @@ struct GraphCanvasView: View {
         .highPriorityGesture(pan)
         .simultaneousGesture(magnify)
         .accessibilityElement(children: .contain)
-        .accessibilityLabel(String(localized: "All routes worldwide: AS path graph, \(nodes.count) networks, \(layout.columnHeaders.count) columns"))
+        .accessibilityLabel(canvasLabel(nodeCount: nodes.count, rows: layout.rowHeaders.count))
         .accessibilityAction(named: Text("Show as list")) { model.displayMode = .list }
+    }
+
+    private func canvasLabel(nodeCount: Int, rows: Int) -> String {
+        let base = String(localized: "AS path graph, \(nodeCount) networks, \(rows) rows")
+        guard model.route.pathStatus != .hidden else { return base }
+        let sentence = model.route.accessibilitySentence
+        return sentence.isEmpty ? base : base + ". " + sentence
+    }
+
+    private func nodeLabel(_ node: GraphNode, summary: BGPStats.Summary, result: BGPResult) -> String {
+        var prefix = ""
+        if isYou(node) {
+            prefix = String(localized: "Your network, ")
+        } else if result.graph.highlightPathNodeIDs.contains(node.id) {
+            prefix = String(localized: "On your path, ")
+        }
+        return prefix + BGPText.accessibilityLabel(for: summary, names: result.names)
     }
 
     private func isYou(_ node: GraphNode) -> Bool {
@@ -184,11 +219,11 @@ struct GraphCanvasView: View {
 
     private func applyInitial(animated: Bool) {
         guard viewSize.width > 0, contentSize.width > 0 else { return }
-        var originMidY: CGFloat?
+        var originMidX: CGFloat?
         if let layout = model.layout, let origin = model.result?.graph.origins.first {
-            originMidY = layout.frames[.asn(origin)]?.midY
+            originMidX = layout.frames[.asn(origin)]?.midX
         }
-        set(ZoomPanState.initial(content: contentSize, in: viewSize, originMidY: originMidY), animated: animated)
+        set(ZoomPanState.initial(content: contentSize, in: viewSize, originMidX: originMidX), animated: animated)
     }
 
     private func fit(animated: Bool) {
@@ -214,19 +249,21 @@ struct GraphCanvasView: View {
     }
 
     private func tap(_ node: GraphNode) {
-        if case .more = node.id {
+        var opensDetails = isYou(node)
+        if case .more = node.id { opensDetails = true }
+        if opensDetails {
             model.requestDetails(for: node.id)
         } else {
             model.select(node.id)
         }
     }
 
-    /// Higher priority is read first: origin column outward, top to bottom.
+    /// Higher priority is read first: origin row outward, left to right.
     private func readingOrder(nodes: [GraphNode], layout: GraphLayout) -> [NodeID: Double] {
         var order: [NodeID: Double] = [:]
         for node in nodes {
-            let y = layout.frames[node.id]?.minY ?? 0
-            order[node.id] = 1_000_000 - Double(node.layer) * 10_000 - Double(y)
+            let x = layout.frames[node.id]?.minX ?? 0
+            order[node.id] = 1_000_000 - Double(node.layer) * 10_000 - Double(x)
         }
         return order
     }

@@ -20,7 +20,7 @@ enum BGPExport {
     private static let pathLimit = 100
 
     /// Plain-text summary (DESIGN §6.10).
-    static func text(result: BGPResult?) -> String {
+    static func text(result: BGPResult?, yourPath: String? = nil) -> String {
         guard let result else { return "" }
         let stats = BGPStats(graph: result.graph)
         let origins = result.originASNs.map { asn -> String in
@@ -30,6 +30,7 @@ enum BGPExport {
         var source = "Source: RIPE RIS via RIPEstat looking-glass, \(result.collectors.count) collectors, \(result.graph.totalPaths) paths"
         if let time = result.latestTime { source += ", " + timeFormatter.string(from: time) }
         lines.append(source)
+        if let yourPath { lines.append(yourPath) }
 
         let upstreams = (stats.layerMembers[1] ?? []).prefix(10).map { asn -> String in
             let name = BGPText.shortName(result.holder(of: asn)).map { " \($0)" } ?? ""
@@ -56,10 +57,11 @@ struct GraphSnapshotView: View {
             Text("\(result.graph.totalPaths) paths · \(result.collectors.count) collectors · RIPE RIS via RIPEstat")
                 .font(.footnote).foregroundStyle(.secondary)
             ZStack(alignment: .topLeading) {
-                GraphEdgesLayer(layout: layout, highlight: nil, originName: BGPText.originName(result))
+                GraphEdgesLayer(layout: layout, highlight: nil)
                 ForEach(nodes) { node in
                     if let frame = layout.frames[node.id] {
-                        NodeView(node: node, name: node.id.asnValue.flatMap { BGPText.shortName(result.holder(of: $0)) })
+                        NodeView(node: node, name: node.id.asnValue.flatMap { BGPText.shortName(result.holder(of: $0)) },
+                                 isOnPath: result.graph.highlightPathNodeIDs.contains(node.id))
                             .frame(width: frame.width, height: frame.height)
                             .position(x: frame.midX, y: frame.midY)
                     }

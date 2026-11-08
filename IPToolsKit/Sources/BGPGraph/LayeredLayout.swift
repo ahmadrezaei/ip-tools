@@ -3,72 +3,78 @@
 
 import CoreGraphics
 
-/// Columnar layout of an `ASGraph`. Rules: DESIGN section 6.4. Deterministic and overlap-free.
+/// Vertical layout of an `ASGraph`. Rules: DESIGN sections 6.4 and 6.5. Deterministic and overlap-free.
+///
+/// Layers are rows: the origin row (layer 0) is at the bottom, the farthest networks at the top, and edges
+/// flow downward toward the destination.
 ///
 /// Output conventions:
-/// - `frames` has every node of the graph; the origin column is the rightmost one.
+/// - `frames` has every node of the graph; the nodes of a row are centred horizontally, "+N more" last (rightmost).
 /// - `edges` are sorted by ascending `pathCount` (draw in this order so thick edges sit on top).
-/// - `columnHeaders` run left to right (highest layer first, origin last); `layer` 0 is the "ORIGIN" caption.
+/// - `rowHeaders` run top to bottom (highest layer first, origin last); `layer` 0 is the "ORIGIN" caption.
 public enum LayeredLayout {
     public static func layout(_ graph: ASGraph, metrics: LayoutMetrics = .init()) -> GraphLayout {
         guard !graph.nodes.isEmpty, graph.layerCount > 0 else {
-            return GraphLayout(size: .zero, frames: [:], edges: [], columnHeaders: [])
+            return GraphLayout(size: .zero, frames: [:], edges: [], rowHeaders: [])
         }
         let maxLayer = graph.layerCount - 1
-        let order = columnOrder(graph, maxLayer: maxLayer)
+        let order = rowOrder(graph, maxLayer: maxLayer)
 
         let nodeW = metrics.nodeSize.width, nodeH = metrics.nodeSize.height
-        let rowPitch = nodeH + metrics.rowSpacing
-        let tallest = order.values.map(\.count).max() ?? 0
-        let H = CGFloat(tallest) * nodeH + CGFloat(max(0, tallest - 1)) * metrics.rowSpacing
-        let L = CGFloat(maxLayer)
+        let widest = order.values.map(\.count).max() ?? 0
+        let contentWidth = CGFloat(widest) * nodeW + CGFloat(max(0, widest - 1)) * metrics.nodeSpacing
+        let rowPitch = metrics.headerHeight + nodeH + metrics.rowSpacing
+        let rows = CGFloat(maxLayer)
 
         var frames: [NodeID: CGRect] = [:]
-        var headers: [(layer: Int, centerX: CGFloat)] = []
+        var headers: [(layer: Int, minX: CGFloat, centerY: CGFloat)] = []
         for layer in stride(from: maxLayer, through: 0, by: -1) {
-            let x = metrics.padding + CGFloat(maxLayer - layer) * (nodeW + metrics.columnSpacing)
-            headers.append((layer, x + nodeW / 2))
-            let column = order[layer] ?? []
-            let columnHeight = CGFloat(column.count) * nodeH + CGFloat(max(0, column.count - 1)) * metrics.rowSpacing
-            let top = metrics.padding + metrics.headerHeight + (H - columnHeight) / 2
-            for (i, id) in column.enumerated() {
-                frames[id] = CGRect(x: x, y: top + CGFloat(i) * rowPitch, width: nodeW, height: nodeH)
+            let top = metrics.padding + CGFloat(maxLayer - layer) * rowPitch
+            headers.append((layer, metrics.padding, top + metrics.headerHeight / 2))
+            let row = order[layer] ?? []
+            let rowWidth = CGFloat(row.count) * nodeW + CGFloat(max(0, row.count - 1)) * metrics.nodeSpacing
+            let left = metrics.padding + (contentWidth - rowWidth) / 2
+            for (i, id) in row.enumerated() {
+                frames[id] = CGRect(x: left + CGFloat(i) * (nodeW + metrics.nodeSpacing),
+                                    y: top + metrics.headerHeight, width: nodeW, height: nodeH)
             }
         }
-        let size = CGSize(width: metrics.padding * 2 + (L + 1) * nodeW + L * metrics.columnSpacing,
-                          height: metrics.padding * 2 + metrics.headerHeight + H)
+        let size = CGSize(width: metrics.padding * 2 + contentWidth,
+                          height: metrics.padding * 2 + (rows + 1) * (metrics.headerHeight + nodeH) + rows * metrics.rowSpacing)
 
         let total = max(1, graph.totalPaths)
         let geometry: [EdgeGeometry] = graph.edges.compactMap { edge -> (Int, EdgeGeometry)? in
             guard let f = frames[edge.from], let t = frames[edge.to] else { return nil }
-            let width = 1.5 + 6 * CGFloat((Double(edge.pathCount) / Double(total)).squareRoot())
+            var width = 1.5 + 6 * CGFloat((Double(edge.pathCount) / Double(total)).squareRoot())
+            if edge.onHighlightPath { width = max(width, metrics.overlayLineWidth) }
             let start: CGPoint, end: CGPoint, c1: CGPoint, c2: CGPoint
             switch edge.kind {
             case .forward:
-                start = CGPoint(x: f.maxX, y: f.midY)
-                end = CGPoint(x: t.minX, y: t.midY)
-                let mx = (start.x + end.x) / 2
-                c1 = CGPoint(x: mx, y: start.y)
-                c2 = CGPoint(x: mx, y: end.y)
+                start = CGPoint(x: f.midX, y: f.maxY)
+                end = CGPoint(x: t.midX, y: t.minY)
+                let my = (start.y + end.y) / 2
+                c1 = CGPoint(x: start.x, y: my)
+                c2 = CGPoint(x: end.x, y: my)
             case .lateral, .backward:
-                start = CGPoint(x: f.minX, y: f.midY)
-                end = CGPoint(x: t.minX, y: t.midY)
-                let pull = min(45, 20 + abs(end.y - start.y) * 0.25)
-                c1 = CGPoint(x: start.x - pull, y: start.y)
-                c2 = CGPoint(x: end.x - pull, y: end.y)
+                // An arc that bulges above the row.
+                start = CGPoint(x: f.midX, y: f.minY)
+                end = CGPoint(x: t.midX, y: t.minY)
+                let pull = min(40, 18 + abs(end.x - start.x) * 0.2)
+                c1 = CGPoint(x: start.x, y: start.y - pull)
+                c2 = CGPoint(x: end.x, y: end.y - pull)
             }
             return (edge.pathCount, EdgeGeometry(id: edge.id, start: start, control1: c1, control2: c2, end: end,
-                                                 lineWidth: width, kind: edge.kind))
+                                                 lineWidth: width, kind: edge.kind, overlay: edge.overlay))
         }.sorted { a, b in
             a.0 != b.0 ? a.0 < b.0 : a.1.id < b.1.id
         }.map(\.1)
-        return GraphLayout(size: size, frames: frames, edges: geometry, columnHeaders: headers)
+        return GraphLayout(size: size, frames: frames, edges: geometry, rowHeaders: headers)
     }
 
     // MARK: Ordering
 
-    /// Top-to-bottom node order per layer: barycentre sweep from the origin outward, then one refinement pass.
-    static func columnOrder(_ graph: ASGraph, maxLayer: Int) -> [Int: [NodeID]] {
+    /// Left-to-right node order per layer: barycentre sweep from the origin outward, then one refinement pass.
+    static func rowOrder(_ graph: ASGraph, maxLayer: Int) -> [Int: [NodeID]] {
         var byLayer: [Int: [GraphNode]] = [:]
         for node in graph.nodes { byLayer[node.layer, default: []].append(node) }
         func score(_ n: GraphNode) -> Int { n.pathCount + n.transitCount }
@@ -103,6 +109,7 @@ public enum LayeredLayout {
                 var sum = 0.0, weight = 0.0
                 for (other, w) in links[n.id] ?? [] {
                     guard let i = index[other] else { continue }
+                    let w = max(w, 1)                  // overlay-only edges have no routes but still pull
                     sum += Double(i) * Double(w)
                     weight += Double(w)
                 }

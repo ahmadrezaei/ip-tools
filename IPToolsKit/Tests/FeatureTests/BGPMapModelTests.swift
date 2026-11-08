@@ -209,9 +209,13 @@ private struct FailingAPI: RIPEstatAPI {
         let content = CGSize(width: 1000, height: 600), view = CGSize(width: 400, height: 800)
         let fitted = ZoomPanState.fitted(content: content, in: view)
         #expect(abs(fitted.scale - 0.4) < 0.0001)
-        let initial = ZoomPanState.initial(content: content, in: view)
+        // Too wide to fit readably: 0.7x, centred horizontally on the origin node, origin row (bottom) on screen.
+        let initial = ZoomPanState.initial(content: content, in: view, originMidX: 500)
         #expect(initial.scale == 0.7)
-        #expect(abs(initial.offset.width - (400 - 700)) < 0.0001)
+        #expect(abs(initial.offset.width - (200 - 350)) < 0.0001)
+        // A tall graph that fits the width is bottom-anchored.
+        let tall = ZoomPanState.initial(content: CGSize(width: 400, height: 2000), in: view, originMidX: 200)
+        #expect(tall.scale == 1 && tall.offset.width == 0 && tall.offset.height == 800 - 2000)
         let far = ZoomPanState(scale: 1, offset: CGSize(width: 5000, height: -5000)).clamped(content: content, in: view)
         #expect(far.offset.width == 320)
         #expect(abs(far.offset.height - (-520)) < 0.0001)

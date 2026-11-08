@@ -18,9 +18,9 @@ import SharedUI
     }
     public var selection: NodeID? { didSet { updateHighlight() } }
     public var displayMode: DisplayMode = .graph
-    public var view: BGPView = .yourRoute
     public let route: YourRouteModel
-    public private(set) var summary: RoutesSummary?
+    /// The prefix header shows one compact line until this is turned on (kept for the session).
+    public var headerExpanded = false
     public internal(set) var phase: Phase = .idle
     public private(set) var result: BGPResult?
     public private(set) var layout: GraphLayout?
@@ -39,6 +39,8 @@ import SharedUI
 
     private(set) var stats: BGPStats?
     private(set) var highlight: BGPHighlight?
+    /// A node is selected that is not on your path: the blue path is dimmed.
+    private(set) var overlayDimmed = false
     /// Bumped whenever a new layout is installed, so the canvas can refit.
     private(set) var layoutVersion = 0
     /// Bumped when the user asks for the details of the current selection.
@@ -56,6 +58,9 @@ import SharedUI
     @ObservationIgnored private var runTask: Task<Void, Never>?
     @ObservationIgnored private var namesTask: Task<Void, Never>?
     @ObservationIgnored private var rebuildTask: Task<Void, Never>?
+    @ObservationIgnored private var overlayTask: Task<Void, Never>?
+    /// The your-path overlay the current graph was built with.
+    @ObservationIgnored private var builtOverlay = PathOverlay.none
     @ObservationIgnored private var runID = 0
     @ObservationIgnored private var pendingSelection: NodeID?
     @ObservationIgnored private let locator: MyNetworkLocator
@@ -77,6 +82,7 @@ import SharedUI
         self.locator = MyNetworkLocator(api: api)
         self.route = YourRouteModel()
         route.configure(api: api, service: traceService, settings: settings)
+        route.onChange = { [weak self] in self?.routeDidChange() }
     }
 
     /// Stops a running measurement and keeps new ones from starting until `resumeFromBackground()`.
@@ -212,9 +218,15 @@ import SharedUI
         if needed > maxNodesPerLayer { maxNodesPerLayer = needed } else { rebuild() }
     }
 
-    /// Text of the visible view: the route in Your route, the paths in All routes.
+    /// Text export: the paths, plus one line for your measured path when there is one.
     public var exportText: String {
-        view == .yourRoute ? route.exportText : BGPExport.text(result: result)
+        BGPExport.text(result: result, yourPath: route.exportLine)
+    }
+
+    /// Opens the details of the first network on your path (your own network when it is known).
+    func openYourPath() {
+        guard let asn = route.pathOverlay.asns.first else { return }
+        requestDetails(for: .asn(asn))
     }
 
     // MARK: - Run
@@ -224,6 +236,8 @@ import SharedUI
         runTask?.cancel()
         namesTask?.cancel()
         rebuildTask?.cancel()
+        overlayTask?.cancel()
+        builtOverlay = .none
         result = nil
         layout = nil
         stats = nil
@@ -235,7 +249,6 @@ import SharedUI
         locateTask?.cancel()
         lateTask?.cancel()
         route.reset()
-        summary = nil
         route.setMyNetwork(nil)
         routeInput = nil
     }
@@ -347,8 +360,10 @@ import SharedUI
         let located = await awaitLocate(timeout: .milliseconds(1500))
         guard id == runID else { return }
         if located.done { route.setMyNetwork(located.network) }
-        let (graph, layout) = await Self.compute(paths: paths, k: k, pinned: pinned(located.network?.asn))
+        let overlay = route.pathOverlay
+        let (graph, layout) = await Self.compute(paths: paths, k: k, pinned: pinned(located.network?.asn), overlay: overlay)
         guard id == runID else { return }
+        builtOverlay = overlay
         var names: [UInt32: String] = [:]
         for origin in origins where !origin.holder.isEmpty { names[origin.asn] = origin.holder }
         let visibility = prefix.contains(":") ? routing?.v6 : routing?.v4
@@ -356,7 +371,6 @@ import SharedUI
                                visibility: visibility, latestTime: glass.latestTime, names: names)
         rawPaths = paths
         install(result: result, layout: layout)
-        updateSummary()
         phase = .loaded
         startRoute(result: result, locateDone: located.done, collectors: glass.collectors)
         if record { recents.record(text, tool: .bgp) }
@@ -405,9 +419,12 @@ import SharedUI
 
     private func pinned(_ asn: UInt32?) -> Set<UInt32> { asn.map { [$0] } ?? [] }
 
-    nonisolated private static func compute(paths: [ObservedPath], k: Int, pinned: Set<UInt32> = []) async -> (ASGraph, GraphLayout) {
+    nonisolated private static func compute(paths: [ObservedPath], k: Int, pinned: Set<UInt32> = [],
+                                            overlay: PathOverlay = .none) async -> (ASGraph, GraphLayout) {
         await Task.detached(priority: .userInitiated) {
-            let graph = GraphBuilder.build(from: paths, options: GraphBuildOptions(maxNodesPerLayer: k, pinned: pinned))
+            let options = GraphBuildOptions(maxNodesPerLayer: k, pinned: pinned, highlightPath: overlay.asns,
+                                            highlightPathHasGap: overlay.hasGap)
+            let graph = GraphBuilder.build(from: paths, options: options)
             return (graph, LayeredLayout.layout(graph))
         }.value
     }
@@ -423,14 +440,14 @@ import SharedUI
     private func rebuild() {
         guard result != nil, !rawPaths.isEmpty else { return }
         rebuildTask?.cancel()
-        let paths = rawPaths, k = maxNodesPerLayer, id = runID, pins = pinned(myASN)
+        let paths = rawPaths, k = maxNodesPerLayer, id = runID, pins = pinned(myASN), overlay = route.pathOverlay
         rebuildTask = Task { [weak self] in
-            let (graph, layout) = await Self.compute(paths: paths, k: k, pinned: pins)
+            let (graph, layout) = await Self.compute(paths: paths, k: k, pinned: pins, overlay: overlay)
             guard let self, !Task.isCancelled, id == self.runID, let current = self.result else { return }
+            self.builtOverlay = overlay
             let updated = BGPResult(prefix: current.prefix, origins: current.origins, graph: graph, collectors: current.collectors,
                                     visibility: current.visibility, latestTime: current.latestTime, names: current.names)
             self.install(result: updated, layout: layout)
-            self.updateSummary()
             if let pending = self.pendingSelection {
                 self.pendingSelection = nil
                 self.selection = pending
@@ -442,21 +459,47 @@ import SharedUI
         }
     }
 
+    /// The graph follows your path: when the route chain changes, rebuild with the new overlay (debounced
+    /// while a measurement is running so each new hop doesn't re-layout the graph).
+    private func routeDidChange() {
+        guard result != nil, route.pathOverlay != builtOverlay else { return }
+        overlayTask?.cancel()
+        let delay: Duration = route.isMeasuring ? .milliseconds(400) : .zero
+        overlayTask = Task { [weak self] in
+            if delay > .zero { try? await Task.sleep(for: delay) }
+            guard !Task.isCancelled, let self, self.route.pathOverlay != self.builtOverlay else { return }
+            self.rebuild()
+        }
+    }
+
     private func updateHighlight() {
+        overlayDimmed = false
         guard let selection, let result, let stats else {
             highlight = nil
             return
         }
+        var lit: BGPHighlight
         switch selection {
         case let .asn(asn):
-            highlight = stats.highlight(through: [asn])
+            lit = stats.highlight(through: [asn])
         case .more:
             guard let node = result.graph.node(selection) else {
                 highlight = nil
                 return
             }
-            highlight = stats.highlight(through: Set(node.collapsed))
+            lit = stats.highlight(through: Set(node.collapsed))
         }
+        // A node on no observed path (only on your path) still lights itself; selecting a node on your path
+        // keeps your path lit, selecting any other node dims it.
+        lit.nodes.insert(selection)
+        if !result.graph.highlightPathNodeIDs.isEmpty {
+            if result.graph.highlightPathNodeIDs.contains(selection) {
+                lit.nodes.formUnion(result.graph.highlightPathNodeIDs)
+            } else {
+                overlayDimmed = true
+            }
+        }
+        highlight = lit
     }
 
     /// The displayed node that stands for the selection (the bucket when the AS is collapsed).
@@ -511,11 +554,6 @@ import SharedUI
         }
     }
 
-    func updateSummary() {
-        guard let result else { summary = nil; return }
-        summary = RoutesSummary(graph: result.graph, collectorCount: result.collectors.count, myASN: myASN)
-    }
-
     private func routeContext(_ result: BGPResult, collectors: [LookingGlass.Collector]) -> RouteContext {
         let input = routeInput
         var locations: [String: String] = [:]
@@ -540,7 +578,6 @@ import SharedUI
             guard let self, !Task.isCancelled, id == self.runID else { return }
             self.route.setMyNetwork(found)
             if found?.asn != nil { self.rebuild() }
-            self.updateSummary()
             self.route.begin(context, myNetwork: found)
         }
     }
