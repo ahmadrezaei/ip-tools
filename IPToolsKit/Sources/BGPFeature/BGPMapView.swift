@@ -118,7 +118,9 @@ public struct BGPMapView: View {
             headerRow
             if model.headerExpanded {
                 PrefixHeaderCard(result: model.result, hostLine: model.hostLine, showUpdated: isRegular,
-                                 yourPath: model.route.pathStatus, onYourPath: { model.openYourPath() }) { asn in
+                                 yourPath: model.route.pathStatus, routeNotice: routeNotice,
+                                 onYourPath: { model.openYourPath() }, onMeasureAgain: { model.route.measureAgain() },
+                                 onTurnOnLookups: { model.route.turnOnLookups() }) { asn in
                     model.requestDetails(for: .asn(asn))
                 }
                 .transition(.opacity.combined(with: .move(edge: .top)))
@@ -156,11 +158,14 @@ public struct BGPMapView: View {
                     .contentShape(Rectangle())
             }
             .buttonStyle(.plain)
-            .accessibilityElement(children: .combine)
+            .accessibilityLabel(Text(headerAccessibilityLabel))
+            .accessibilityValue(Text(headerAccessibilityValue))
             .accessibilityHint(Text(model.headerExpanded ? "Hides details" : "Shows details"))
             Picker("View", selection: $model.displayMode) {
-                Text("Graph").tag(BGPMapModel.DisplayMode.graph)
-                Text("List").tag(BGPMapModel.DisplayMode.list)
+                Label("Graph", systemImage: "point.3.connected.trianglepath.dotted").labelStyle(.iconOnly)
+                    .tag(BGPMapModel.DisplayMode.graph)
+                Label("List", systemImage: "list.bullet").labelStyle(.iconOnly)
+                    .tag(BGPMapModel.DisplayMode.list)
             }
             .pickerStyle(.segmented)
             .controlSize(.small)
@@ -178,7 +183,7 @@ public struct BGPMapView: View {
                     .frame(width: 28, height: 28)
             }
             .buttonStyle(.plain)
-            .accessibilityLabel(Text(model.headerExpanded ? "Hide details" : "Show details"))
+            .accessibilityHidden(true)
         }
         .frame(minHeight: 30)
         .padding(.horizontal)
@@ -193,6 +198,34 @@ public struct BGPMapView: View {
             text += " \(name)"
         }
         return text
+    }
+
+    private var routeNotice: RouteNotice {
+        switch model.route.phase {
+        case .partial, .stopped: .measureAgain
+        case .failed, .unavailable: .unavailable
+        case .lookupsOff: .lookupsOff
+        case .idle, .locating, .measuring, .done: .none
+        }
+    }
+
+    private var headerAccessibilityLabel: String {
+        let prefix = model.result?.prefix ?? ""
+        guard let result = model.result, let asn = result.originASNs.first else { return prefix }
+        let name = BGPText.shortName(model.holder(of: asn)).map { " \($0)" } ?? ""
+        return String(localized: "\(prefix), origin AS \(String(asn))\(name)")
+    }
+
+    private var headerAccessibilityValue: String {
+        let state = model.headerExpanded ? String(localized: "expanded") : String(localized: "collapsed")
+        let path: String
+        switch model.route.pathStatus {
+        case .hidden: return state
+        case .measuring: path = String(localized: "measuring your path")
+        case .shown: path = String(localized: "your path shown")
+        case .partial: path = String(localized: "your path partial")
+        }
+        return path + ", " + state
     }
 
     private func toggleHeader() {
@@ -236,7 +269,7 @@ public struct BGPMapView: View {
     @ToolbarContentBuilder private var toolbarContent: some ToolbarContent {
         ToolbarItemGroup(placement: .primaryAction) {
             Menu {
-                Picker("Show per column", selection: $model.maxNodesPerLayer) {
+                Picker("Show per row", selection: $model.maxNodesPerLayer) {
                     Text("Top 6").tag(6)
                     Text("Top 12").tag(12)
                     Text("Top 30").tag(30)
@@ -248,7 +281,7 @@ public struct BGPMapView: View {
                 if isRegular {
                     Label("Top \(model.maxNodesPerLayer)", systemImage: "chevron.down")
                 } else {
-                    Label("Show per column", systemImage: "ellipsis.circle")
+                    Label("Show per row", systemImage: "ellipsis.circle")
                 }
             }
             .disabled(model.result == nil)

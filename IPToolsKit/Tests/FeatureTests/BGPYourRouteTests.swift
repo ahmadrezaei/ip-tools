@@ -90,7 +90,7 @@ import Testing
         for await update in measurer.measure(resolvedTarget(target), origins: [15169], prefixTarget: prefixTarget) {
             switch update {
             case let .hops(list): last = list
-            case let .finished(origin, _): reached = origin
+            case let .finished(origin): reached = origin
             case .failed: failed = true
             }
         }

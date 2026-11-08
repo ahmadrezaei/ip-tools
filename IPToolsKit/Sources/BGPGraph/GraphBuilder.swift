@@ -185,7 +185,7 @@ public enum GraphBuilder {
         }
         let edges: [GraphEdge] = merged.map { pair, count in
             let lf = layerOfNode[pair.from]!, lt = layerOfNode[pair.to]!
-            let kind: GraphEdge.Kind = lf == lt + 1 ? .forward : (lf == lt ? .lateral : .backward)
+            let kind: GraphEdge.Kind = lf > lt ? .forward : (lf == lt ? .lateral : .backward)
             return GraphEdge(from: pair.from, to: pair.to, pathCount: count, kind: kind, overlay: overlayEdges[pair])
         }.sorted { a, b in
             if a.pathCount != b.pathCount { return a.pathCount > b.pathCount }

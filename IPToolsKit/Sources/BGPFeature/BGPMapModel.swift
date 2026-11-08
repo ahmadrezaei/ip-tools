@@ -14,7 +14,7 @@ import SharedUI
 
     public var targetText: String = ""
     public var maxNodesPerLayer: Int = 6 {        // 6 / 12 / 30 -> rebuilds graph + layout off-main
-        didSet { if oldValue != maxNodesPerLayer { rebuild() } }
+        didSet { if oldValue != maxNodesPerLayer { graphToken += 1; rebuild() } }
     }
     public var selection: NodeID? { didSet { updateHighlight() } }
     public var displayMode: DisplayMode = .graph
@@ -43,6 +43,9 @@ import SharedUI
     private(set) var overlayDimmed = false
     /// Bumped whenever a new layout is installed, so the canvas can refit.
     private(set) var layoutVersion = 0
+    /// Bumped for a new Map and when K changes: the canvas resets pan and zoom to the opening view. A rebuild
+    /// for a new your-path overlay bumps only `layoutVersion`, so the user's pan and zoom survive it.
+    private(set) var graphToken = 0
     /// Bumped when the user asks for the details of the current selection.
     private(set) var detailsToken = 0
     /// Bumped when the legend's Fit button is pressed; the canvas refits.
@@ -61,6 +64,8 @@ import SharedUI
     @ObservationIgnored private var overlayTask: Task<Void, Never>?
     /// The your-path overlay the current graph was built with.
     @ObservationIgnored private var builtOverlay = PathOverlay.none
+    /// The newest overlay a rebuild was asked for (the debounce throttles; it never restarts).
+    @ObservationIgnored private var requestedOverlay = PathOverlay.none
     @ObservationIgnored private var runID = 0
     @ObservationIgnored private var pendingSelection: NodeID?
     @ObservationIgnored private let locator: MyNetworkLocator
@@ -91,7 +96,8 @@ import SharedUI
         route.stop(reason: String(localized: "app moved to background"))
     }
 
-    /// The app is active again: measurements may start (the user re-measures a stopped route).
+    /// The app is active again. This only lifts the block on new measurements; it does not restart the stopped
+    /// one (the header's "Measure again" does).
     public func resumeFromBackground() {
         route.isSuspended = false
     }
@@ -238,6 +244,8 @@ import SharedUI
         rebuildTask?.cancel()
         overlayTask?.cancel()
         builtOverlay = .none
+        requestedOverlay = .none
+        overlayTask = nil
         result = nil
         layout = nil
         stats = nil
@@ -370,7 +378,9 @@ import SharedUI
         let result = BGPResult(prefix: prefix, origins: origins, graph: graph, collectors: glass.collectors,
                                visibility: visibility, latestTime: glass.latestTime, names: names)
         rawPaths = paths
+        requestedOverlay = overlay
         install(result: result, layout: layout)
+        graphToken += 1
         phase = .loaded
         startRoute(result: result, locateDone: located.done, collectors: glass.collectors)
         if record { recents.record(text, tool: .bgp) }
@@ -462,13 +472,15 @@ import SharedUI
     /// The graph follows your path: when the route chain changes, rebuild with the new overlay (debounced
     /// while a measurement is running so each new hop doesn't re-layout the graph).
     private func routeDidChange() {
-        guard result != nil, route.pathOverlay != builtOverlay else { return }
-        overlayTask?.cancel()
+        guard result != nil, route.pathOverlay != requestedOverlay else { return }
+        requestedOverlay = route.pathOverlay
+        guard overlayTask == nil else { return }
         let delay: Duration = route.isMeasuring ? .milliseconds(400) : .zero
         overlayTask = Task { [weak self] in
             if delay > .zero { try? await Task.sleep(for: delay) }
-            guard !Task.isCancelled, let self, self.route.pathOverlay != self.builtOverlay else { return }
-            self.rebuild()
+            guard !Task.isCancelled, let self else { return }
+            self.overlayTask = nil
+            if self.route.pathOverlay != self.builtOverlay { self.rebuild() }
         }
     }
 

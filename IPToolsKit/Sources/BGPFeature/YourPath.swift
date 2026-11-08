@@ -21,6 +21,10 @@ extension YourRouteModel {
         return chain
     }
 
+    private static func isMeasuredTransit(_ node: ASChain.Node) -> Bool {
+        node.role == .transit && node.provenance == .measured
+    }
+
     var pathStatus: YourPathStatus {
         switch phase {
         case .measuring:
@@ -37,6 +41,11 @@ extension YourRouteModel {
         switch phase {
         case .measuring, .done, .partial, .stopped:
             guard let chain = drawablePath else { return .none }
+            // While measuring, wait for a measured transit network: before that the chain is just YOU next to
+            // the expected origin, which would draw a misleading first frame.
+            if case .measuring = phase, chain.completion != .complete, !chain.nodes.contains(where: Self.isMeasuredTransit) {
+                return .none
+            }
             return PathOverlay(asns: chain.asnSequence, hasGap: chain.nodes.last?.provenance == .expected)
         case .idle, .locating, .lookupsOff, .unavailable, .failed:
             return .none

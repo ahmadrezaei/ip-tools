@@ -32,7 +32,8 @@ enum BGPExport {
         lines.append(source)
         if let yourPath { lines.append(yourPath) }
 
-        let upstreams = (stats.layerMembers[1] ?? []).prefix(10).map { asn -> String in
+        let seen = (stats.layerMembers[1] ?? []).filter { stats.pathCount[$0] != nil }
+        let upstreams = seen.prefix(10).map { asn -> String in
             let name = BGPText.shortName(result.holder(of: asn)).map { " \($0)" } ?? ""
             return "AS\(asn)\(name) (\(stats.pathCount[asn] ?? 0))"
         }
@@ -68,6 +69,7 @@ struct GraphSnapshotView: View {
                 }
             }
             .frame(width: layout.size.width, height: layout.size.height)
+            .overlay { RowCaptionsLayer(layout: layout) }
         }
         .padding(16)
         .background(Color.white)

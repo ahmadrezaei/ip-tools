@@ -41,9 +41,13 @@ struct ASDetailView: View {
     private func content(result: BGPResult, stats: BGPStats, summary: BGPStats.Summary) -> some View {
         header(result: result, summary: summary)
         badges(summary: summary)
-        tiles(stats: stats, summary: summary)
+        if let asn = summary.asn, stats.pathCount[asn] == nil {
+            notInRIS(total: stats.total)
+        } else {
+            tiles(stats: stats, summary: summary)
+        }
         if summary.asn == nil { collapsedList(result: result, stats: stats, summary: summary) }
-        paths(stats: stats, summary: summary)
+        if summary.asn.map({ stats.pathCount[$0] != nil }) ?? true { paths(stats: stats, summary: summary) }
         if let asn = summary.asn { actions(asn) }
     }
 
@@ -89,6 +93,18 @@ struct ASDetailView: View {
             tile(title: String(localized: "Collectors"), value: "\(collectors.count)",
                  detail: collectors.prefix(3).joined(separator: ", ") + (collectors.count > 3 ? "…" : ""))
         }
+    }
+
+    private func notInRIS(total: Int) -> some View {
+        VStack(alignment: .leading, spacing: 4) {
+            Text("Not in any of the \(total) RIS routes").font(.subheadline.weight(.semibold))
+            Text("Traceroute shows the real path; RIPE collectors only see part of the Internet.")
+                .font(.footnote).foregroundStyle(.secondary)
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(10)
+        .background(RoundedRectangle(cornerRadius: 12, style: .continuous).fill(Color.primary.opacity(0.06)))
+        .accessibilityElement(children: .combine)
     }
 
     private func tile(title: String, value: String, detail: String) -> some View {

@@ -3,6 +3,17 @@
 
 import SwiftUI
 
+/// What the expanded card says about a your-path measurement that did not give a full path.
+enum RouteNotice: Equatable {
+    case none
+    /// Partial or stopped: the path can be measured again.
+    case measureAgain
+    /// Failed, or no measurement service.
+    case unavailable
+    /// "Look up networks" is off, so there is nothing to measure with.
+    case lookupsOff
+}
+
 /// Prefix, origin(s) and summary chips above the graph.
 struct PrefixHeaderCard: View {
     let result: BGPResult?
@@ -10,7 +21,10 @@ struct PrefixHeaderCard: View {
     var isLoading = false
     var showUpdated = false
     var yourPath: YourPathStatus = .hidden
+    var routeNotice: RouteNotice = .none
     var onYourPath: () -> Void = {}
+    var onMeasureAgain: () -> Void = {}
+    var onTurnOnLookups: () -> Void = {}
     var onSelectASN: (UInt32) -> Void = { _ in }
 
     var body: some View {
@@ -24,6 +38,11 @@ struct PrefixHeaderCard: View {
                 }
                 originRows(result)
                 chips(result)
+                routeNoticeRow
+                if yourPath != .hidden {
+                    Text("Your public IP and the routers' addresses were looked up at RIPEstat (RIPE NCC).")
+                        .font(.caption2).foregroundStyle(.secondary)
+                }
             } else if isLoading {
                 Text(verbatim: "0.0.0.0/24").font(.system(size: 20, weight: .bold, design: .monospaced))
                 Text(verbatim: "Origin AS00000 Placeholder").font(.subheadline)
@@ -85,6 +104,25 @@ struct PrefixHeaderCard: View {
         }
     }
 
+    @ViewBuilder private var routeNoticeRow: some View {
+        switch routeNotice {
+        case .none:
+            EmptyView()
+        case .measureAgain:
+            Button(action: onMeasureAgain) {
+                Label("Measure again", systemImage: "arrow.clockwise").font(.caption.weight(.medium))
+            }
+            .buttonStyle(.bordered).controlSize(.small)
+        case .unavailable:
+            chip(String(localized: "Your path unavailable"), systemImage: "exclamationmark.triangle", tint: .orange)
+        case .lookupsOff:
+            HStack(spacing: 8) {
+                Text("Turn on network lookups to see your path").font(.caption).foregroundStyle(.secondary)
+                Button("Turn On", action: onTurnOnLookups).buttonStyle(.bordered).controlSize(.small)
+            }
+        }
+    }
+
     @ViewBuilder private var yourPathChip: some View {
         switch yourPath {
         case .hidden:
@@ -138,40 +176,51 @@ struct PrefixHeaderCard: View {
     }()
 }
 
-/// Collapsed header: prefix, origin (truncated) and the your-path status on one line.
+/// Collapsed header: line 1 is the prefix with the your-path glyph, line 2 the origin.
 struct PrefixCompactLabel: View {
     let prefix: String
     let origin: String
     var yourPath: YourPathStatus = .hidden
 
     var body: some View {
-        HStack(spacing: 6) {
-            Text(verbatim: prefix)
-                .font(.system(.footnote, design: .monospaced).weight(.bold))
-                .lineLimit(1)
-                .fixedSize()
-            Text(verbatim: "· \(origin)")
-                .font(.footnote).foregroundStyle(.secondary)
+        VStack(alignment: .leading, spacing: 1) {
+            HStack(spacing: 6) {
+                Text(verbatim: prefix)
+                    .font(.system(.footnote, design: .monospaced).weight(.bold))
+                    .lineLimit(1)
+                glyph.fixedSize()
+            }
+            Text(verbatim: origin)
+                .font(.caption2).foregroundStyle(.secondary)
                 .lineLimit(1).truncationMode(.tail)
-            indicator.fixedSize()
         }
         .frame(maxWidth: .infinity, alignment: .leading)
     }
 
-    @ViewBuilder private var indicator: some View {
+    @ViewBuilder private var glyph: some View {
         switch yourPath {
         case .hidden:
             EmptyView()
         case .measuring:
-            HStack(spacing: 4) {
-                ProgressView().controlSize(.mini)
-                Text("Measuring…")
-            }
-            .font(.caption2.weight(.semibold)).foregroundStyle(.secondary)
+            ProgressView().controlSize(.mini)
+                .accessibilityLabel(Text("Measuring your path"))
         case .shown:
-            Text("━ Your path").font(.caption2.weight(.semibold)).foregroundStyle(.blue)
+            Capsule().fill(Color.blue).frame(width: 16, height: 3)
+                .accessibilityLabel(Text("Your path shown"))
         case .partial:
-            Text("Your path: partial").font(.caption2.weight(.semibold)).foregroundStyle(.orange)
+            DashedLine()
+                .stroke(Color.orange, style: StrokeStyle(lineWidth: 3, lineCap: .round, dash: [4, 3]))
+                .frame(width: 16, height: 3)
+                .accessibilityLabel(Text("Your path partial"))
         }
+    }
+}
+
+private struct DashedLine: Shape {
+    func path(in rect: CGRect) -> Path {
+        var path = Path()
+        path.move(to: CGPoint(x: rect.minX, y: rect.midY))
+        path.addLine(to: CGPoint(x: rect.maxX, y: rect.midY))
+        return path
     }
 }

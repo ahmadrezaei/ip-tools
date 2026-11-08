@@ -84,6 +84,33 @@ import Testing
         #expect(api.calls.count == 2)
     }
 
+    // MARK: Overlay rebuild throttle
+
+    @Test func rapidOverlayChangesEndOnTheLatestOverlay() async {
+        let model = makeBGPModel(api: BGPFakeAPI(), service: nil)
+        await load(model)
+        let token = model.graphToken
+        let route = model.route
+        route.installPreview(phase: .done, chain: chain([24940, 1299, 15169]), context: context(), names: [:], myNetwork: nil)
+        route.installPreview(phase: .done, chain: chain([24940, 13335, 15169]), context: context(), names: [:], myNetwork: nil)
+        _ = await bgpWait { model.result?.graph.highlightPathNodeIDs.contains(.asn(13335)) == true }
+        #expect(model.result?.graph.highlightPathNodeIDs.contains(.asn(13335)) == true)
+        #expect(model.result?.graph.highlightPathNodeIDs.contains(.asn(1299)) == false)
+        #expect(model.graphToken == token, "an overlay rebuild must not reset pan and zoom")
+        // Resetting the route clears the overlay again and a new request is not swallowed.
+        route.installPreview(phase: .idle, chain: nil, context: nil, names: [:], myNetwork: nil)
+        _ = await bgpWait { model.result?.graph.highlightPathNodeIDs.isEmpty == true }
+        #expect(model.result?.graph.highlightPathNodeIDs.isEmpty == true)
+    }
+
+    @Test func changingKResetsTheGraphToken() async {
+        let model = makeBGPModel(api: BGPFakeAPI(), service: nil)
+        await load(model)
+        let token = model.graphToken
+        model.maxNodesPerLayer = 12
+        #expect(model.graphToken == token + 1)
+    }
+
     // MARK: Handed-over trace
 
     @Test func handedOverTraceLooksUpMissingNetworks() async {

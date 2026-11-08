@@ -93,6 +93,9 @@ public struct ASGraph: Sendable {
     public let layerByASN: [UInt32: Int]
     /// All ASNs per layer (uncollapsed), ranked by score (pathCount + transitCount) descending, ties by lower ASN.
     public let rankedByLayer: [Int: [UInt32]]
+    /// ASNs that appear only on the highlight overlay (seen in no cleaned route). They stay in `layerByASN`
+    /// and `rankedByLayer`; use this to tell them apart.
+    public let overlayOnlyASNs: Set<UInt32>
     /// Unique cleaned paths, most frequent first.
     public let pathGroups: [PathGroup]
     private var nodeIndex: [NodeID: Int] = [:]
@@ -151,11 +154,16 @@ public struct ASGraph: Sendable {
         self.transitCounts = transit
         self.collectorsByASN = collectors.mapValues { $0.sorted() }
         self.layerByASN = layer
+        var overlayOnly = Set<UInt32>()
+        for id in highlightPathNodeIDs { if case let .asn(a) = id, pathCount[a] == nil { overlayOnly.insert(a) } }
+        self.overlayOnlyASNs = overlayOnly
         self.rankedByLayer = ranked
         self.pathGroups = grouped
             .map { PathGroup(asns: $0.key, count: $0.value.count, collectors: $0.value.collectors.count) }
             .sorted { $0.count != $1.count ? $0.count > $1.count : $0.asns.lexicographicallyPrecedes($1.asns) }
     }
+
+    public func isOverlayOnly(_ asn: UInt32) -> Bool { overlayOnlyASNs.contains(asn) }
 
     public func node(_ id: NodeID) -> GraphNode? { nodeIndex[id].map { nodes[$0] } }
 

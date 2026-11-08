@@ -209,13 +209,32 @@ private struct FailingAPI: RIPEstatAPI {
         let content = CGSize(width: 1000, height: 600), view = CGSize(width: 400, height: 800)
         let fitted = ZoomPanState.fitted(content: content, in: view)
         #expect(abs(fitted.scale - 0.4) < 0.0001)
-        // Too wide to fit readably: 0.7x, centred horizontally on the origin node, origin row (bottom) on screen.
+        // The opening view ignores the width: scale from the height (0.7...1.0), origin centred and clamped.
         let initial = ZoomPanState.initial(content: content, in: view, originMidX: 500)
-        #expect(initial.scale == 0.7)
-        #expect(abs(initial.offset.width - (200 - 350)) < 0.0001)
-        // A tall graph that fits the width is bottom-anchored.
+        #expect(initial.scale == 1)                                               // capped at 1.0
+        #expect(abs(initial.offset.width - (200 - 500)) < 0.001)                  // origin centred, inside the clamp range
+        #expect(initial.offset.height == 100)                                      // shorter than the view: centred
+        let center = ZoomPanState.initial(content: CGSize(width: 1000, height: 600), in: CGSize(width: 400, height: 300), originMidX: 100)
+        #expect(center.scale == 0.7 && center.offset.width == 0)                  // clamped to 0
+        #expect(abs(center.offset.height - (300 - 420) / 2) < 0.0001 || center.offset.height == 300 - 420)
+        // A tall graph is bottom-anchored.
         let tall = ZoomPanState.initial(content: CGSize(width: 400, height: 2000), in: view, originMidX: 200)
-        #expect(tall.scale == 1 && tall.offset.width == 0 && tall.offset.height == 800 - 2000)
+        #expect(tall.scale == 0.7 && tall.offset.height == 800 - 1400)
+        // With an overlay: centre on the span of the path nodes plus the origin.
+        let origin = CGRect(x: 800, y: 500, width: 100, height: 60)
+        let near = ZoomPanState.PathFocus(origin: origin, overlay: [CGRect(x: 600, y: 0, width: 100, height: 60), origin])!
+        let spanned = ZoomPanState.initial(content: content, in: view, originMidX: origin.midX, path: near)
+        #expect(spanned.scale == 1 && abs(spanned.offset.width - (200 - 750)) < 0.001)     // span 600...900, midpoint 750
+        // A span wider than the view favours YOU (left of the origin here) and keeps it fully visible.
+        let youFrame = CGRect(x: 100, y: 0, width: 100, height: 60)
+        let wide = ZoomPanState.PathFocus(origin: origin, overlay: [youFrame, origin])!
+        let favoured = ZoomPanState.initial(content: content, in: view, originMidX: origin.midX, path: wide)
+        #expect(wide.you == youFrame && abs(favoured.offset.width - (8 - 100)) < 0.001)
+        #expect(favoured.offset.width + youFrame.minX >= 0 && favoured.offset.width + youFrame.maxX <= view.width)
+        // No overlay frames: falls back to the origin.
+        #expect(ZoomPanState.PathFocus(origin: origin, overlay: []) == nil)
+        let fallback = ZoomPanState.initial(content: content, in: view, originMidX: 500, path: nil)
+        #expect(abs(fallback.offset.width - (200 - 500)) < 0.001)
         let far = ZoomPanState(scale: 1, offset: CGSize(width: 5000, height: -5000)).clamped(content: content, in: view)
         #expect(far.offset.width == 320)
         #expect(abs(far.offset.height - (-520)) < 0.0001)

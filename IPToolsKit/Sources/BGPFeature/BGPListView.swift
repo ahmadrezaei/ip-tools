@@ -39,16 +39,19 @@ struct BGPListView: View {
 
     @ViewBuilder
     private func layerSection(_ layer: Int, result: BGPResult, stats: BGPStats) -> some View {
-        let members = stats.layerMembers[layer] ?? []
-        if !members.isEmpty {
+        let all = stats.layerMembers[layer] ?? []
+        // Only networks seen in RIS count; those only on your path are listed (tagged) but not counted.
+        let members = all.filter { stats.pathCount[$0] != nil }
+        let overlayOnly = all.filter { stats.pathCount[$0] == nil }
+        if !all.isEmpty {
             let expanded = expandedLayers.contains(layer)
             let shownNodes = result.graph.nodes.compactMap { node -> UInt32? in
                 node.layer == layer ? node.id.asnValue : nil
             }
-            let shown = expanded ? members : members.filter { shownNodes.contains($0) }
+            let shown = (expanded ? members : members.filter { shownNodes.contains($0) }) + overlayOnly
             Section {
                 ForEach(shown, id: \.self) { asn in row(asn, result: result, stats: stats) }
-                if !expanded, shown.count < members.count {
+                if !expanded, shown.count - overlayOnly.count < members.count {
                     Button("Show all \(members.count)") { expandedLayers.insert(layer) }
                 }
             } header: {

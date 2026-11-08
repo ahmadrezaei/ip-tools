@@ -261,7 +261,7 @@ Request plan per map, run as a `TaskGroup` with the whole group cancellable:
    **(v1.1) Replaced** by `Your route | All routes` (§6.11.1). Graph/List becomes a toggle inside All routes (§6.12). The header card's chips move into the All routes summary.
 4. **Graph canvas:** fills the remaining height. Rounded container, subtle background (`secondarySystemGroupedBackground`). A floating **Fit** button (`arrow.up.left.and.arrow.down.right`) sits bottom-right.
 5. **Selection card** (floating, above the tab bar, appears when a node is selected): "AS3356 · Level 3 Parent, LLC" / "Transit · 4 paths (1.1%) · 1 hop from origin" / **Details ›**. Details opens a sheet with `.presentationDetents([.medium, .large])` showing `ASDetailView`. Tapping empty canvas clears the selection.
-6. Toolbar menu (`ellipsis.circle` on iPhone; "Top 6 ▾" on iPad): **Show per column:** Top 6 (default) · Top 12 · Top 30. **Share as text / Share as image**.
+6. Toolbar menu (`ellipsis.circle` on iPhone; "Top 6 ▾" on iPad): **Show per row:** Top 6 (default) · Top 12 · Top 30. **Share as text / Share as image**.
 
 ### 6.3 Graph construction (`GraphBuilder`): exact rules
 Input: an `[ObservedPath]`, one per RIS peer route (`as_path` split on spaces, peer first, origin last).
@@ -296,11 +296,10 @@ Coordinates are in points, before zoom. **The graph is vertical: layers are rows
 - **Canvas size** = `(padding·2 + W) × (padding·2 + (L+1)·(18+44) + L·44)`, where `W` is the widest row and `L = maxLayer`.
 
 ### 6.5 Rendering & interaction (`GraphCanvasView`)
-- **Orientation and opening view:** vertical (§6.4). The opening view fits the graph if the scale is at least 0.7; otherwise it scales to the view width (0.7–1.0×), centres horizontally on the origin node and anchors the origin row at the bottom, and the rest is reached by panning. The Fit button lives in the header row, not over the canvas, so it never covers a node.
+- **Orientation and opening view:** vertical (§6.4). The graph opens at `scale = min(1.0, max(0.7, viewH/canvasH))`, ignoring the width, so it never opens zoomed in past 1×. Horizontally it centres on the your-path span (the blue overlay nodes plus the origin) when that span fits the view; if it does not, it favours the YOU node (the overlay node farthest from the origin) and shows as much of the origin as fits. With no overlay it centres on the origin node. It is clamped so the graph never leaves a gap at either side when it is wider than the view. When the overlay arrives after the graph and the user has not panned or zoomed, the opening view is re-applied so it centres on the path. A graph shorter than the view is centred vertically. A taller one is anchored with the origin row at the bottom edge and the rest is reached by panning. The Fit button and a double-tap still show the whole graph. The Fit button lives in the header row, not over the canvas, so it never covers a node.
 - **Header:** collapsed by default to one compact line (prefix, origin, your-path status, Graph/List, Fit, an info button). The info button or the line expands the full card (prefix, origin, chips, your-path chip). The state is kept for the session only.
 - **Edges:** one SwiftUI `Canvas`, drawing the paths from `EdgeGeometry`. **Nodes:** real SwiftUI `Button`s positioned with `.position()` in a `ZStack` of the canvas size, so hit testing and VoiceOver come for free. The whole stack gets one `.scaleEffect(scale, anchor: .topLeading)` + `.offset(pan)`.
 - **Gestures:** `MagnifyGesture` (scale 0.3…3.0, anchored at the pinch location) running simultaneously with `DragGesture` (pan, clamped so at least 80 pt of graph stays visible). Double-tap on empty space toggles between "fit" and 1.0× at that point. The Fit button animates to fit.
-- **Initial view:** `fitScale = min(viewW/canvasW, viewH/canvasH)`. If `fitScale ≥ 0.7`, the graph is centred at that scale (the iPad usually fits). Otherwise the graph opens at **0.7×**, vertically centred, with the **origin column anchored to the right edge**. The user pans left toward the peers. The mockup shows this.
 - **Node view:** a rounded rect with corner radius 10.
   - Line 1: "AS13335", semibold 14 pt, monospaced digits.
   - Line 2: short name (caption 11 pt, secondary, 1 line, tail-truncated).
@@ -327,7 +326,7 @@ An inset grouped `List`:
 - Each row's VoiceOver label: "AS 3356, Level 3 Parent, transit, 4 paths, 1 hop from origin". Tapping opens `ASDetailView`.
 
 ### 6.8 VoiceOver in Graph mode
-The canvas is `.accessibilityElement(children: .contain)` with the label "AS path graph, 22 networks, 4 columns". Nodes are ordered column by column from the origin outward (`.accessibilitySortPriority`). Each node is a button with the same label as its List row, plus the hint "Double-tap to highlight its paths". A rotor action switches to List.
+The canvas is `.accessibilityElement(children: .contain)` with the label "AS path graph, 22 networks, 4 rows". Nodes are ordered row by row from the origin outward (`.accessibilitySortPriority`). Each node is a button with the same label as its List row, plus the hint "Double-tap to highlight its paths". A rotor action switches to List.
 
 ### 6.9 States
 | State | UI |

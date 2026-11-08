@@ -143,6 +143,12 @@ struct RouteContext {
         startMeasuring()
     }
 
+    /// "Turn On" in the header: enables "Look up networks" and measures again.
+    func turnOnLookups() {
+        settings?.trace.lookUpASNs = true
+        measureAgain()
+    }
+
     public func stop(reason: String? = nil) {
         guard case let .measuring(ttl) = phase else { return }
         runID += 1

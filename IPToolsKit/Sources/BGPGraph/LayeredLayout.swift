@@ -55,7 +55,14 @@ public enum LayeredLayout {
                 let my = (start.y + end.y) / 2
                 c1 = CGPoint(x: start.x, y: my)
                 c2 = CGPoint(x: end.x, y: my)
-            case .lateral, .backward:
+            case .backward:
+                // Lower row up to a higher row: loop out to the right of both nodes.
+                start = CGPoint(x: f.maxX, y: f.midY)
+                end = CGPoint(x: t.maxX, y: t.midY)
+                let pull = min(40, 18 + abs(end.y - start.y) * 0.2)
+                c1 = CGPoint(x: start.x + pull, y: start.y)
+                c2 = CGPoint(x: end.x + pull, y: end.y)
+            case .lateral:
                 // An arc that bulges above the row.
                 start = CGPoint(x: f.midX, y: f.minY)
                 end = CGPoint(x: t.midX, y: t.minY)
@@ -165,7 +172,8 @@ public enum LayeredLayout {
         for (l, ids) in order { for id in ids { layerOf[id] = l } }
         var byTargetLayer: [Int: [(Int, Int)]] = [:]
         for e in forward {
-            guard let s = position[e.from], let t = position[e.to], let l = layerOf[e.to] else { continue }
+            guard let s = position[e.from], let t = position[e.to], let l = layerOf[e.to],
+                  let lf = layerOf[e.from], lf == l + 1 else { continue }
             byTargetLayer[l, default: []].append((s, t))
         }
         var count = 0

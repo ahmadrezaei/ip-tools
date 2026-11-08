@@ -196,4 +196,50 @@ import Testing
         #expect(a.maxY < b.minY)
         #expect(LayeredLayout.layout(g).frames == layout.frames)
     }
+
+    private func assertNoOverlaps(_ layout: GraphLayout) {
+        let frames = Array(layout.frames.values)
+        for i in 0..<frames.count {
+            for j in (i + 1)..<max(i + 1, frames.count) { #expect(!frames[i].intersects(frames[j])) }
+        }
+    }
+
+    private func multiRowGraph() -> ASGraph {
+        GraphBuilder.build(from: repeated(3, [100, 174, 15169]) + repeated(1, [200, 174, 15169]),
+                           options: .init(highlightPath: [100, 15169]))
+    }
+
+    @Test func multiRowDropIsForwardWithVerticalGeometry() throws {
+        let graph = multiRowGraph()
+        let e = try #require(graph.edge(.asn(100), .asn(15169)))
+        #expect(e.kind == .forward)
+        let layout = LayeredLayout.layout(graph)
+        let g = try #require(layout.edges.first { $0.id == e.id })
+        let f = try #require(layout.frames[.asn(100)]), t = try #require(layout.frames[.asn(15169)])
+        #expect(g.start == CGPoint(x: f.midX, y: f.maxY))
+        #expect(g.end == CGPoint(x: t.midX, y: t.minY))
+        #expect(layout.frames == LayeredLayout.layout(graph).frames)
+        assertNoOverlaps(layout)
+    }
+
+    @Test func backwardEdgeLoopsOutToTheRight() throws {
+        let e = GraphEdge(from: .asn(15169), to: .asn(174), pathCount: 0, kind: .backward)
+        var graph = multiRowGraph()
+        graph = ASGraph(nodes: graph.nodes, edges: graph.edges + [e], origins: graph.origins,
+                        totalPaths: graph.totalPaths, discardedPaths: 0, layerCount: graph.layerCount,
+                        cleanedPaths: graph.cleanedPaths)
+        let layout = LayeredLayout.layout(graph)
+        let g = try #require(layout.edges.first { $0.id == e.id })
+        let f = try #require(layout.frames[.asn(15169)]), t = try #require(layout.frames[.asn(174)])
+        #expect(g.start == CGPoint(x: f.maxX, y: f.midY) && g.end == CGPoint(x: t.maxX, y: t.midY))
+        #expect(g.control1.x > max(f.maxX, t.maxX) - 0.001 && g.control2.x > max(f.maxX, t.maxX) - 0.001)
+        assertNoOverlaps(layout)
+    }
+
+    @Test func overlayOnlyASNsAreReported() {
+        let graph = GraphBuilder.build(from: repeated(2, [100, 174, 15169]),
+                                       options: .init(highlightPath: [999, 15169]))
+        #expect(graph.isOverlayOnly(999) && !graph.isOverlayOnly(174))
+        #expect(graph.layerByASN[999] != nil)
+    }
 }
