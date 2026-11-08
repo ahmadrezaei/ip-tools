@@ -11,6 +11,11 @@ public struct NetworkInfo: Sendable, Hashable {
     }
 }
 
+public struct WhatsMyIP: Sendable, Hashable {
+    public let ip: String
+    public init(ip: String) { self.ip = ip }
+}
+
 public struct ASHolder: Sendable, Hashable {
     public let asn: UInt32; public let holder: String
     public var shortName: String { ASName.short(holder) }

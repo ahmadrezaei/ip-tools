@@ -184,6 +184,9 @@ public struct TraceHop: Identifiable, Hashable, Sendable {
         if let address = resolved?.address { mapHop(address) }
     }
 
+    /// Hops 1...ttl (all when nil), only for finished/stopped runs; nil while running or empty.
+    public func snapshot(upTo ttl: Int? = nil) -> TraceSnapshot? { nil }
+
     public var canMapTarget: Bool { resolved?.address.isPubliclyRoutable ?? false }
 
     // MARK: - Export

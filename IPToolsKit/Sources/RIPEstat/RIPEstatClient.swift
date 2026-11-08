@@ -11,6 +11,12 @@ public protocol RIPEstatAPI: Sendable {
     func asNames(_ asns: [UInt32]) async throws -> [UInt32: String]          // chunks of 200 internally
     func announcedPrefixes(_ asn: UInt32) async throws -> [String]
     func routingStatus(_ prefix: String) async throws -> RoutingStatus
+    func whatsMyIP() async throws -> WhatsMyIP        // GET whats-my-ip/data.json, never cached, 10 s timeout
+}
+
+public extension RIPEstatAPI {
+    /// Keeps existing test fakes compiling.
+    func whatsMyIP() async throws -> WhatsMyIP { throw RIPEstatError.api(messages: ["whats-my-ip not supported"]) }
 }
 
 public enum RIPEstatError: Error, Sendable, Equatable {

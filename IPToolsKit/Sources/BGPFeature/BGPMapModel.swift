@@ -18,6 +18,10 @@ import SharedUI
     }
     public var selection: NodeID? { didSet { updateHighlight() } }
     public var displayMode: DisplayMode = .graph
+    /// Stub default is `.allRoutes`; the BGP work flips it to `.yourRoute`.
+    public var view: BGPView = .allRoutes
+    public let route = YourRouteModel()
+    public private(set) var summary: RoutesSummary?
     public internal(set) var phase: Phase = .idle
     public private(set) var result: BGPResult?
     public private(set) var layout: GraphLayout?
@@ -46,11 +50,16 @@ import SharedUI
     @ObservationIgnored private var pendingSelection: NodeID?
     @ObservationIgnored private var prefixCache: [UInt32: (holder: String?, prefixes: [String])] = [:]
 
-    public init(api: any RIPEstatAPI, recents: RecentsStore, router: AppRouter) {
+    public init(api: any RIPEstatAPI, recents: RecentsStore, router: AppRouter,
+                traceService: (any TraceService)? = nil,      // nil: Your route shows "unavailable"
+                settings: SettingsStore? = nil, network: NetworkMonitor? = nil) {
         self.api = api
         self.recents = recents
         self.router = router
     }
+
+    /// Stops a running measurement.
+    public func stopForBackground() {}
 
     // MARK: - Input
 

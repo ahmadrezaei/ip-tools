@@ -3,7 +3,11 @@
 
 public struct GraphBuildOptions: Hashable, Sendable {
     public var maxNodesPerLayer: Int = 6       // 6 / 12 / 30
-    public init(maxNodesPerLayer: Int = 6) { self.maxNodesPerLayer = maxNodesPerLayer }
+    public var pinned: Set<UInt32> = []        // never folded into "+N more" (DESIGN 6.12 item 4)
+    public init(maxNodesPerLayer: Int = 6, pinned: Set<UInt32> = []) {
+        self.maxNodesPerLayer = maxNodesPerLayer
+        self.pinned = pinned
+    }
 }
 
 /// Builds the layered AS graph from observed paths. Rules: DESIGN section 6.3. Deterministic: every ordering

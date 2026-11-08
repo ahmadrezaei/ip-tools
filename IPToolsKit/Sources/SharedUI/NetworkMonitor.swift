@@ -6,6 +6,8 @@ import Observation
 
 @MainActor @Observable public final class NetworkMonitor {
     public private(set) var isOnline: Bool = true
+    /// +1 whenever interface types, status or gateways change.
+    public private(set) var pathGeneration: Int = 0
     @ObservationIgnored private let monitor = NWPathMonitor()
 
     /// NWPathMonitor on a private queue.

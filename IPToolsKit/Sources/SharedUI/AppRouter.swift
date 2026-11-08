@@ -1,14 +1,17 @@
 // SPDX-License-Identifier: MIT
 // Copyright (c) 2026 Ahmad Rezaei
 
+import NetCore
 import Observation
 
 public struct ToolRequest: Equatable, Sendable {
     public let target: String
     public let autostart: Bool
-    public init(target: String, autostart: Bool) {
+    public let trace: TraceSnapshot?
+    public init(target: String, autostart: Bool, trace: TraceSnapshot? = nil) {
         self.target = target
         self.autostart = autostart
+        self.trace = trace
     }
 }
 
@@ -24,8 +27,8 @@ public struct ToolRequest: Equatable, Sendable {
         self.selectedTool = selectedTool
     }
 
-    public func open(_ tool: Tool, target: String, autostart: Bool) {
-        pending[tool] = ToolRequest(target: target, autostart: autostart)
+    public func open(_ tool: Tool, target: String, autostart: Bool, trace: TraceSnapshot? = nil) {
+        pending[tool] = ToolRequest(target: target, autostart: autostart, trace: trace)
         requestTick += 1
         selectedTool = tool
     }

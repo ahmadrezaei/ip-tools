@@ -1,7 +1,9 @@
 # IP Tools: Ping & Traceroute — Design Spec (v1)
 
 Status: **draft for approval**, no code written yet.
-Companion files: [`mockup.html`](mockup.html) (visual mockups, open in a browser) and [`icon.svg`](icon.svg) (app icon).
+Companion files: [`mockup.html`](mockup.html) (visual mockups, open in a browser), [`mockup-your-route.html`](mockup-your-route.html) (v1.1 mockups: BGP "Your route", clearer "All routes", Ping count control) and [`icon.svg`](icon.svg) (app icon).
+
+**v1.1 addendum (draft for approval, 2026-11-08):** BGP Map gets a new default view, **Your route** (§6.11), the existing graph becomes **All routes (worldwide)** with a plain-English summary and legend (§6.12), and Ping gets a visible count control (§4.3). Privacy wording changes are in §9; types, signatures and the parallel work split are in §12.7.
 
 | | |
 |---|---|
@@ -24,6 +26,8 @@ Companion files: [`mockup.html`](mockup.html) (visual mockups, open in a browser
 6. **BGP Map = layered AS graph, origin on the right.** Columns are BFS distance from the origin. Each column shows the top 6 ASes and folds the rest into a "+N more" bucket. Edge width shows how many paths use the edge. Nodes highlight on tap. The graph pans and zooms, and a **List** mode shows the same data. List is the default when VoiceOver is on.
 7. **RIPEstat calls per map: 2 or 3 requests.** `looking-glass` and `network-info`/`prefix-overview` run in parallel, then **one bulk `as-names` call** names every AS on the graph. (Verified: `as-names` accepts a comma-separated list. 296 ASNs came back in one request.)
 8. **Project setup:** a local Swift package `IPToolsKit` holds all code, including the SwiftUI features, so `swift build` and `swift test` work on a Mac with no simulator. A thin Xcode app target uses **folder-synchronised groups**, so parallel agents never edit `project.pbxproj`.
+9. **(v1.1) BGP Map opens on "Your route":** a short chain of networks from *your* network to the destination's origin AS, e.g. `You · AS24940 Hetzner → AS13335 Cloudflare → AS15169 Google`. It comes from a finished traceroute that was handed over, else from a RIS path that contains your AS, else from a quick background traceroute. The worldwide graph stays one tap away as **All routes**.
+10. **(v1.1) Ping count is on the main screen:** a "10 pings ▾" menu chip under the target bar with presets and a custom value.
 
 ---
 
@@ -69,6 +73,8 @@ Large navigation titles in the empty state; inline titles once results exist (th
 
 The router switches tool/tab and hands over the target. Cross-links **pre-fill and auto-start** (the user asked for a specific action). Recents only pre-fill.
 
+**(v1.1)** When the Traceroute tab opens the BGP Map (header **Map in BGP**, hop **Map in BGP**, or a hop's ASN badge) after its run has *finished or stopped*, the request also carries a `TraceSnapshot` (§12.7). For the trace target it is the whole trace; for a hop it is the hops up to and including that hop. BGP "Your route" reuses it instead of probing again (§6.11.2). Ping's **Map in BGP** carries no snapshot.
+
 ### 2.4 Keyboard (iPad hardware keyboard)
 ⌘1/⌘2/⌘3 switch tool · ⌘L focuses the target field · ⌘R or Return starts · ⌘. stops · ⌘⇧C copies results.
 
@@ -109,7 +115,8 @@ Every tool renders one of: **Empty** → **Resolving/Loading** → **Running/Res
 
 ### 4.1 Layout (iPhone, top to bottom)
 1. Target bar + Start/Stop.
-2. Run header.
+   - **(v1.1) Options row** under the bar: the **count chip** "10 pings ▾" (§4.3.1), then "every 1 s · 56 bytes" in secondary text. Tapping that text opens Ping Settings.
+2. Run header. While running it includes progress: "Pinging **1.1.1.1** · 3 of 10 · 56 bytes" ("· 3 sent" when the count is Until stopped).
 3. **Stats grid** (card, 3 × 2): Min · Avg · Max · Jitter · Loss (orange if > 0, red if ≥ 50 %) · Received "19 of 20". The values are `--` until the first reply arrives.
 4. **RTT chart** (card, height 140 pt, Swift Charts): `LineMark` + `PointMark` for RTT (ms) against sequence number. Only the last 60 samples are shown, so it scrolls. Timeouts are red `xmark` marks on the x-axis baseline, and the line breaks at them. A dashed `RuleMark` shows the average. The y-axis starts at 0 and ends at a "nice" max (≥ max RTT × 1.2). `chartXAxis` labels the first and last sequence numbers. Accessibility: `.accessibilityChartDescriptor` gives a summary ("20 samples, min 11.8, avg 14.2, max 22.3 ms").
 5. **Replies list** (newest first): colour dot · `#seq` · "64 bytes · ttl 58" · RTT "13.6 ms" (semibold, monospaced digits). A timeout row reads "Request timed out" in secondary colour. An error row shows a red message (e.g. "Destination unreachable (host)").
@@ -134,13 +141,24 @@ On iPad (regular width), the stats grid and chart sit side by side above the lis
 ### 4.3 Settings (sheet, "Ping Settings")
 | Setting | Options | Default |
 |---|---|---|
-| Count | 5, 10, 20, 50, 100, Until stopped | **10** |
+| Count | 5, 10, 20, 50, 100, Until stopped, **Custom… (1–10,000)** (v1.1) | **10** |
 | Interval | 0.2, 0.5, 1, 2 s | **1 s** |
 | Timeout | 1, 2, 5 s | **2 s** |
 | Packet size (payload bytes) | 16, 56, 120, 512, 1024, 1472 (v4) / 1452 (v6) | **56** |
 | IP version (shared with Traceroute) | Automatic, IPv4, IPv6 | **Automatic** |
 
 Nothing else (no TTL, no DF bit, no QoS). "Automatic" uses the first address `getaddrinfo` returns with `AI_ADDRCONFIG`. That follows the system's RFC 6724 ordering, so it prefers IPv6 on IPv6-capable networks, just as Safari would.
+
+#### 4.3.1 Count chip on the Ping screen (v1.1)
+Owner request: "on default 10 ping, add option user can change how many ping must be". Count used to live only behind the gear, and nobody found it.
+
+- **Placement:** an options row directly under the target bar, on iPhone and iPad: `[10 pings ▾]  every 1 s · 56 bytes`. The chip is a SwiftUI `Menu` styled as a capsule (fill `quaternarySystemFill`, tint text, footnote semibold, min height 32 pt, hit area 44 pt). The label reads "5 pings", "10 pings", "37 pings", "1 ping" or "Until stopped".
+- **Menu contents** (a `Picker(.inline)` inside the `Menu`, with the current value checked): 5 · 10 · 20 · 50 · 100 · Until stopped · divider · **Custom…**. When the current count is not a preset, a checked row "Custom (37)" appears above "Custom…".
+- **Custom…** opens an `.alert("Number of Pings")` with a `TextField` (`.keyboardType(.numberPad)`, pre-filled with the last custom value) and the message "Between 1 and 10,000." **Set** is disabled unless the text is an integer in 1...10_000. **Cancel** keeps the old value. Values over 10,000 show the message in red. No other validation UI is needed.
+- **One value, two places.** The chip and the settings sheet both bind `SettingsStore.ping.count` (`Int?`, `nil` = Until stopped; already persisted in `settings.v1`). The settings sheet's Count picker gets the same "Custom (37)" row and a "Custom…" button that opens the same alert. The last custom value is remembered for pre-filling in `@AppStorage("ping.lastCustomCount")`, which lives in PingFeature, so SharedUI is unchanged.
+- **While running** (`resolving` or `running`): the chip is `.disabled` (secondary text, no chevron tint). The run uses the count captured at Start. The run header shows "3 of 10". On Finished it shows "Finished · 10 sent, 10 received" as before. A changed count takes effect on the next Start.
+- **VoiceOver:** "Ping count, 10 pings, pop-up button. Double-tap to change." While disabled, the hint is "Available when ping is stopped."
+- **Keyboard (iPad):** no new shortcut. The chip is reachable with Tab.
 
 ### 4.4 Statistics definitions (`PingStatistics`)
 - `sent`: probes whose outcome is known (reply, timeout or error). In-flight probes are not counted.
@@ -240,6 +258,7 @@ Request plan per map, run as a `TaskGroup` with the whole group cancellable:
 1. Inline title "BGP Map", Share in the toolbar. Below it the target bar + **Map**.
 2. **Prefix header card:** prefix in SF Mono bold 20 pt ("1.1.1.0/24"). "Origin [AS13335] Cloudflare, Inc." (the ASN badge is tappable → AS details). Chips: "360 paths" · "23 collectors" · "Seen by 319/319 peers" (from `routing-status`, omitted if it fails) · "Updated 12:32 UTC" (on iPad, or in details on iPhone). A MOAS warning chip appears if there are several origins: "2 origin ASes".
 3. **Segmented control:** Graph | List (`Picker(.segmented)`). The default is Graph, or List when `accessibilityVoiceOverEnabled` is on. The choice is remembered per session.
+   **(v1.1) Replaced** by `Your route | All routes` (§6.11.1). Graph/List becomes a toggle inside All routes (§6.12). The header card's chips move into the All routes summary.
 4. **Graph canvas:** fills the remaining height. Rounded container, subtle background (`secondarySystemGroupedBackground`). A floating **Fit** button (`arrow.up.left.and.arrow.down.right`) sits bottom-right.
 5. **Selection card** (floating, above the tab bar, appears when a node is selected): "AS3356 · Level 3 Parent, LLC" / "Transit · 4 paths (1.1%) · 1 hop from origin" / **Details ›**. Details opens a sheet with `.presentationDetents([.medium, .large])` showing `ASDetailView`. Tapping empty canvas clears the selection.
 6. Toolbar menu (`ellipsis.circle` on iPhone; "Top 6 ▾" on iPad): **Show per column:** Top 6 (default) · Top 12 · Top 30. **Share as text / Share as image**.
@@ -334,6 +353,194 @@ Unique AS paths:
 ```
 Image: an `ImageRenderer` of the graph at 2× scale, with a caption.
 
+### 6.11 Your route (v1.1, the default BGP view)
+
+**Problem.** Owner: "Can the BGP map show the current path? It is so unclear." The graph shows ~300 routes *other* networks use toward the origin. It never shows the route the user's own traffic takes, and first-time users can't read it.
+**Goal.** In one glance a non-expert sees "this is the path my traffic takes": a short chain of networks from *you* to the destination.
+
+```
+You · AS24940 Hetzner  →  AS13335 Cloudflare  →  AS15169 Google · 8.8.8.0/24
+```
+
+#### 6.11.1 Placement & navigation
+- Under the prefix header card is a segmented control, **`Your route | All routes`** (`Picker(.segmented)`, `BGPMapModel.view: BGPView`). **Your route is the default**, also when VoiceOver is on, because the chain is already a list. The choice is remembered for the app session.
+- **List is not a third segment.** It is another representation of All routes, so it lives inside All routes (§6.12). Three segments would mix "what" with "how".
+- The **prefix header card** becomes compact in both views: prefix (SF Mono bold 20 pt) and "Origin [AS15169] Google LLC". Its chips move to the All routes summary.
+- **iPad:** the same segmented control sits in the detail column under the header. Tapping a chain node opens the existing **inspector** (§6.6) with an extra "On your route" section (§6.11.8).
+- **Share** (toolbar) exports the visible view: the route text (§6.11.11) in Your route, §6.10 in All routes.
+
+#### 6.11.2 Where the chain comes from (decision order)
+Evaluated once the BGP fetch (§6.1 step 1) **and** "your network" (§6.11.3) have both finished. The first rule that applies wins:
+
+| # | Source | Condition | Label shown |
+|---|---|---|---|
+| 1 | **Handed-over trace** | The router request carried a `TraceSnapshot` whose `target.address` equals the address being mapped (IP/hostname input), and it is ≤ 10 min old | "Measured by traceroute" + "from your traceroute at 12:41" |
+| 2 | **BGP from your network** (Source A) | `myASN` is known and appears in ≥ 1 cleaned RIS path for this prefix | "Seen in BGP from your network" |
+| 3 | **Fresh traceroute** (Source B, the common case) | otherwise, and the target is publicly routable | "Measured by traceroute" |
+
+- Rule 2 needs no probing, so it is instant. Its footer offers **Measure with traceroute**, which forces rule 3 and replaces the chain with the measured one.
+- Rule 3 is the common case. Verified 2026-11-08 from AS24940: none of the 369 RIS routes to 8.8.8.0/24 contain AS24940. Most user networks (home ISPs, mobile carriers, clouds) are not RIS peers.
+- **Measure again** (footer, `arrow.clockwise`) always runs rule 3.
+
+#### 6.11.3 Locating your network
+1. `GET whats-my-ip/data.json?sourceapp=…` (no `resource`) → `data.ip` (verified: `{"ip":"91.107.240.242"}`). RIPEstat echoes the source address of the HTTPS connection, which it already sees on every request.
+2. `network-info?resource=<that ip>` → `asns[0]` = `myASN`, `prefix` (verified: `91.107.240.242` → `{"asns":["24940"],"prefix":"91.107.128.0/17"}`).
+3. The name comes from the same bulk `as-names` call as the graph (`myASN` is added to the list).
+- Both run **in parallel with** the §6.1 requests (the client cap of 4 concurrent still holds). `whats-my-ip` is **never served from the response cache**.
+- The result is cached as `MyNetwork` for the app session. It is invalidated when `NetworkMonitor.pathGeneration` changes (Wi-Fi ↔ cellular, VPN up/down) or after 30 min.
+- If several ASNs come back, the first is used. If `asns` is empty or the call fails, `myASN = nil`. This is **not fatal**: the first node becomes "Your network", with no ASN.
+- The address family doesn't matter. If RIPEstat saw IPv6 but the target is IPv4, the ASN is almost always the same. A different ASN is handled by rule 5 of §6.11.5.
+
+#### 6.11.4 Source A: chain from a RIS path (`ASChainBuilder.fromBGP`)
+1. Input: `graph.cleanedPaths` (prepends collapsed, loops and AS_SETs removed, §6.3 rule 1), `myASN`, origins.
+2. For every path containing `myASN` at index *i*, take the suffix `p[i...]` (it always ends at an origin).
+3. Group identical suffixes. Choose the one with the most paths. Ties go to the shorter suffix, then the lexicographically smaller ASN list.
+4. Nodes: `suffix[0]` → role **you**. Middle ASNs → **transit**. Last → **destination**. Provenance `.bgp`. Each node gets `routeCount` (the paths with that suffix) and the collectors that saw them.
+5. If `myASN` is an origin, the chain is one node, role `youAndDestination`.
+- Caption under the status: "Your network announces this route to RIPE collectors RRC01 (London) and RRC03 (Amsterdam)." With the `bgp-state` fallback there are no locations, so only "RRC01, RRC03" is shown.
+
+#### 6.11.5 Source B: quick traceroute (`RouteMeasurer`)
+**Probe target:** IP input → that IP. Hostname → the address already resolved for the map. Prefix → the first usable address (IPv4 /≤30: network + 1; /31–/32: network; IPv6: network + 1). ASN → the chosen prefix, as for a prefix.
+**Probe options (fixed, not the user's Traceroute settings):** `TraceOptions(maxHops: 30, probesPerHop: 2, timeout: 1.5)`. The IP version follows the probe target's family.
+**Hop → ASN:** for each new public hop address, `api.networkInfo(ip)` (the client's 5-min cache and 4-request cap apply). Names come from a debounced (500 ms) `as-names` bulk call, as in §5.5. **This only happens if Settings › Traceroute › "Look up networks" is on.** If it is off, see the states table, §6.11.9.
+**Stop rules** are checked after every trace event *and* every ASN result. The trace task is cancelled on the first one that applies:
+
+| Rule | Condition | Outcome |
+|---|---|---|
+| a | Echo Reply from the probe target | done, `reachedTarget = true` |
+| b | Destination Unreachable | done if the last AS is an origin, else partial |
+| c | Prefix-derived target, and a hop's ASN is an origin | done ("Reached Google's network at hop 8"), with no need to hit `.1` |
+| d | Origin AS already reached, then 3 silent hops in a row | done ("Reached Google's network. 8.8.8.8 itself didn't answer.") |
+| e | 5 silent hops in a row before any origin hop | **partial** (stalled) |
+| f | `maxHops` reached | done if the last AS is an origin, else partial |
+
+A typical run takes 5–15 s. Lifecycle:
+- It starts automatically when rule 3 is chosen, even if the user is looking at All routes.
+- It is cancelled by a new **Map**, by **Cancel**, by the status card's **Stop**, or when the app moves to the background ("Stopped: app moved to background", with the known part kept as partial).
+- It does not touch the Traceroute tab's state and does not add a recent (the map already did).
+- Public targets never trigger the Local Network prompt.
+
+#### 6.11.6 Building the chain from hops (`ASChainBuilder.fromTrace`): exact rules
+Input: `[ChainHop]` ordered by TTL, `myASN?`, origins, `finished: Bool`. The builder is pure and cheap, and it re-runs on every update, so the chain grows live.
+1. **Classify each hop:** `silent` (no reply) · `privateAddress` (not publicly routable: RFC 1918, CGNAT 100.64/10, link-local, ULA, loopback, using `IPAddress.isPubliclyRoutable`) · `unknownNetwork` (public, but ASN pending, failed or unannounced, e.g. most IXP LAN addresses) · `network(asn)`.
+2. **Leading block:** every hop before the first `network` hop belongs to the **You** node. These are usually private Wi-Fi, CGNAT or VPN hops.
+3. **Merge runs:** consecutive `network` hops with the same ASN form one segment. Non-network hops *between two hops of the same ASN* are absorbed into that segment: its TTL range spans them, but they add no RTT. Non-network hops between *different* ASNs are dropped and counted in `skippedHops`. Details shows them as "2 hops without a known network".
+4. **No loops:** if a segment's ASN equals an earlier segment's ASN, everything from the earlier segment through this one is merged into the earlier segment.
+5. **You node:** if `myASN` equals the first segment's ASN, that segment *is* the You node (and absorbs the leading block). Otherwise a separate You node (`asn: myASN`, possibly `nil`) holds the leading block and is placed first. Example from this machine: the public IP is in AS24940 Hetzner, hops 1–3 are private and hop 4 is already Cloudflare (a tunnel), so the chain is You · AS24940 (hops 1–3) → AS13335 (hops 4–7) → AS15169 (hops 8–11). No warning is shown. The You node says "Your public IP is in this network".
+6. **Destination:**
+   - If the last segment's ASN is an origin, it becomes role **destination** and `completion = .complete`.
+   - Otherwise an **expected** destination node (primary origin, provenance `.expected`, `gapBefore = true`) is appended, with `completion = .gap`, or `.inProgress` while measuring. The stitching rule (§6.11.7) may then turn `.gap` into `.stitched`.
+7. **Roles:** first = you, last = destination, everything else = transit. If `myASN` is an origin, the chain is a single `youAndDestination` node ("This address is on your own network").
+8. **Per node:** `ttls` = the TTL range of the segment's answered hops · `answeredHops` · `rttRange` = min…max over every answered probe RTT in the segment · `addresses` (distinct, in order) and hostnames, for details.
+
+Worked example (8.8.8.8 from AS24940, hop 10 silent):
+
+| TTL | Address | Class | → node |
+|---|---|---|---|
+| 1–3 | 192.168.70.1, 172.16.21.1, 10.99.7.1 | private | You · AS24940 Hetzner (hops 1–3) |
+| 4–7 | 104.28.0.0, 172.71.133.1, 141.101.67.186, 141.101.67.57 | AS13335 | Cloudflare (hops 4–7) |
+| 8–9 | 108.170.255.223, 72.14.237.93 | AS15169 | Google (hops 8–11) |
+| 10 | * * | silent, absorbed (between two Google hops) | |
+| 11 | 8.8.8.8 dns.google | AS15169, echo reply | reached |
+
+#### 6.11.7 Partial results and the stitching rule (decision: stitch, clearly marked)
+When a measured chain ends in `.gap`, the last measured ASN is *X* and *X* is not an origin:
+- If *X* appears in ≥ 1 cleaned RIS path for this prefix, take the suffixes from *X* to the origin and pick the most common one (same tie-break as §6.11.4). Its ASNs after *X* are appended with provenance `.bgp`. The connectors from *X* onward are **dashed**, each such node has a small **"from BGP"** tag, and `completion = .stitched`. Status: "Traceroute stopped in Arelion at hop 9. The rest is the most common BGP route from Arelion (6 of 369 routes)."
+- If *X* is in no RIS path, nothing is stitched. A **"?" gap** sits between *X* and the expected destination: a dashed connector with a 22 pt circle containing "?". Status: "Traceroute couldn't see past hop 7. The networks between Cloudflare and Google are unknown."
+- Never stitch when the trace reached an origin, from a You node with no ASN, or into Source A chains.
+- Real-data note: AS13335 appears in **0 of 369** RIS routes to 8.8.8.0/24. Cloudflare→Google is a link RIPE collectors don't see. A stall inside Cloudflare therefore shows the honest "?" gap, not invented hops. This is why measured data comes first.
+
+#### 6.11.8 Layout
+**iPhone (vertical chain, top = you, bottom = destination).** The view scrolls vertically, which suits 393 pt. Each card is full width, so names don't truncate, Dynamic Type works up to AX5, and it reads like a list. A horizontal chain fits only about 3 nodes at 393 pt.
+1. **Status card** (`RouteStatusCard`): icon (22 pt) + title + subtitle.
+   - Done: green `checkmark.circle.fill`, "**3 networks** between you and 8.8.8.8", "Measured by traceroute · 11 hops · 12:41".
+   - Measuring: `ProgressView`, "Measuring your route… hop 6", "Traceroute from this device · usually 5–15 s", and a trailing **Stop** button (bordered, small).
+   - Partial: orange `exclamationmark.triangle`. Seen in BGP: tint `point.3.connected.trianglepath.dotted`.
+2. **Chain** (`YourRouteView`): node cards (`ChainNodeView`, `secondarySystemGroupedBackground`, corner 12, min height 64) joined by a **connector rail**: a 2.5 pt line centred on the 32 pt role circles. The rail is solid `tint` for measured links, dashed `secondaryLabel` for `.bgp` or `.expected` links, and has the "?" bubble in a gap.
+   - Role circle: You = green fill + `person.fill`. Transit = `fill` + `arrow.down`. Destination = blue (tint) fill + `flag.fill`, matching the blue origin in All routes.
+   - Line 1: name, semibold 17 ("Cloudflare"), then the ASN badge (`asn` style, monospaced digits).
+   - Line 2 (footnote, secondary): the role text, "Your network" · "Transit network" · "Destination · announces 8.8.8.0/24".
+   - Line 3 (footnote): traceroute nodes show "Hops 4–7 · 128–151 ms" with an RTT colour dot (§3.6) for the range's **lower** bound (the latency of reaching that network). BGP nodes show "Seen in 2 routes". Expected nodes show "Not reached yet" while measuring, or "Not reached" when done. The You node shows "Hops 1–3 (local) · 3–133 ms" (VoiceOver: "hops 1 to 3 on your local network"), or "No hops seen before the next network" when it has none.
+   - "from BGP" tag (caption2, `fill` capsule) on stitched nodes. The trailing chevron → AS details.
+   - Expected nodes are drawn at 0.45 opacity with a dashed outline.
+   - **Live growth:** new nodes slide in from the top (0.2 s, opacity only with Reduce Motion). A pending row "Hop 7…" with a spinner sits under the last measured node.
+3. **Footer:** the source line (caption, secondary): "Measured from this device · networks looked up at RIPEstat". Buttons: **Measure again** (`arrow.clockwise`) and **Show 11 hops** (disclosure, compact hop rows grouped under their AS: TTL, host/IP, avg RTT, the same visual as §5.1 rows without the context menu). Plus a privacy footnote, once per session: "Your public IP and the routers' addresses were looked up at RIPEstat (RIPE NCC)."
+
+**iPad (regular width): horizontal chain**, left = you, right = destination, the same direction as All routes. Node cards share the width equally (150–220 pt wide, min height 108), with 26 pt arrow connectors between them. Use it when `nodes × 150 + (nodes − 1) × 26 ≤ available width` and Dynamic Type < `.accessibility1`, otherwise fall back to the vertical chain. Three nodes fit beside the open inspector. Longer chains go vertical. The status card sits above it and the footer below it. Selecting a node opens the inspector:
+- the usual §6.6 content, and
+- a new first section, **"On your route"**: role, hops, RTT range, and the hop rows inside that AS (TTL · host or IP · avg RTT).
+- If the ASN is in no RIS path (e.g. Cloudflare for 8.8.8.0/24), the paths tile reads "Not in any of the 369 RIS routes to this prefix" and the line "Traceroute shows the real path; RIPE collectors only see part of the Internet."
+
+`ASDetailView` must accept an ASN that is **not in the graph** (today it assumes a `GraphNode`).
+
+#### 6.11.9 States
+| State | UI (status card + chain) |
+|---|---|
+| Locating | "Finding your network…" · You node skeleton (`redacted(.placeholder)`) · destination node shown (known from §6.1) |
+| Measuring | As in §6.11.8. The chain grows. The destination is dimmed with a dashed rail |
+| Done | Green status. All nodes solid |
+| Partial: gap | Orange "Traceroute couldn't see past hop 7" · "?" gap · **Measure again** |
+| Partial: stitched | Orange "Traceroute stopped in Arelion at hop 9" · dashed "from BGP" nodes |
+| Stopped (user / background) | "Stopped at hop 6" · known part kept, as partial · **Measure again** |
+| Seen in BGP | Tint icon, "Seen in BGP from your network" · nodes say "Seen in N routes" · **Measure with traceroute** |
+| Your own network | Single node, "8.8.8.8 is on your own network (AS15169 Google)" |
+| Network lookups off | `ContentUnavailableView("Network Lookups Are Off", systemImage: "network.slash", description: "Your route needs to look up which network each router belongs to (via RIPEstat).")` + button **Turn On Lookups** (sets `settings.trace.lookUpASNs = true`, then measures). Source A still works without it |
+| Your network unknown | Not an error. First node "Your network", no ASN |
+| Trace can't start (`NetError` socket/route) | `ErrorStateView` with the §4.2 copy (e.g. "No IPv6 route — this network doesn't support IPv6.") + Try Again. All routes still works |
+| No public hop answered | Partial: You → "?" → destination · "No router on the way answered. Some networks block traceroute." |
+| Private / not announced / RIPEstat busy / offline | Exactly as §6.9. They apply to the whole BGP tab, and both segments are hidden |
+| Measurement unavailable (`traceService == nil`, tests/previews) | "Route measurement isn't available here." |
+
+#### 6.11.10 Accessibility
+- The chain container is `.accessibilityElement(children: .contain)`. Its label is **one sentence**, built by `YourRouteModel.accessibilitySentence`:
+  - "Your route to 8.8.8.8, measured by traceroute: from your network, AS 24940 Hetzner, through AS 13335 Cloudflare, to AS 15169 Google, the destination. 11 hops."
+  - Partial: "… through AS 13335 Cloudflare, then unknown networks, to AS 15169 Google, the destination. Traceroute stopped at hop 7."
+  - BGP: "Your route to 8.8.8.8, seen in BGP: from your network, AS 3320 Deutsche Telekom, directly to AS 15169 Google, the destination."
+- Each node is a button: "Transit network, AS 13335, Cloudflare, hops 4 to 7, 128 to 151 milliseconds." Hint: "Double-tap for details." Nodes are read in chain order.
+- The status card is `.isHeader`. Each change of measuring progress posts an `.announcement` at most every 3 s ("Cloudflare found at hop 4"), plus one when it finishes.
+- ASNs are spoken as "AS 13335" (the space prevents "AS" being read as "as"). Colour is never the only signal: role text, dashed rails *and* the "from BGP" tag all say the same thing.
+
+#### 6.11.11 Export (Your route)
+```
+Your route to 8.8.8.8 (8.8.8.0/24, origin AS15169 Google LLC)
+Measured by traceroute from this device, 2026-11-08 12:41 UTC, 11 hops
+  You  AS24940  Hetzner Online   hops 1–3    3–133 ms
+   →   AS13335  Cloudflare       hops 4–7    128–151 ms
+   →   AS15169  Google           hops 8–11   139–152 ms   (reached 8.8.8.8)
+— IP Tools for iOS
+```
+A BGP-sourced route prints "Seen in BGP from your network (RRC01, RRC03)" and "×2 routes" instead of hops. Stitched nodes are suffixed "(from BGP)". A gap prints `   ?   unknown networks`.
+
+### 6.12 All routes (worldwide): clarity changes (v1.1)
+The graph rules in §6.3–§6.5 are unchanged except where noted.
+1. **Name:** the segment "All routes". VoiceOver: "All routes worldwide".
+2. **Summary card** (`AllRoutesSummaryCard`, replaces the header chips). It is made of plain sentences built by `RoutesSummary`:
+   - Line 1, bold: "**369 routes** from 23 RIPE collectors" (the segment already says "worldwide").
+   - Line 2: "**75%** connect to Google directly. Most others pass through **AS214292 DE-CIX** or **AS3356 Level 3**."
+     - *direct %* = cleaned paths of length ≤ 2 ÷ total, as an integer percent.
+     - *handoffs* = up to 2 layer-1 ASes with the highest `transitCount` (> 0), with ties going to the higher score.
+     - The second sentence is omitted when there are none.
+     - Verified on 8.8.8.0/24 today: 275/369 = 75%, transit counts DE-CIX 9 and Level 3 8.
+   - Line 3, about you (only if `myASN` is known):
+     - "**Your network** (AS3320 Deutsche Telekom) is in 2 routes, highlighted below", or
+     - "Your network (AS24940 Hetzner) isn't in these routes. **See Your route ›**", which switches the segment.
+   - Trailing icon button: **List** (`list.bullet`) ⇄ **Graph** (`point.3.connected.trianglepath.dotted`). It replaces the old Graph|List segment. It defaults to List when VoiceOver is on.
+   - Secondary chips under the text (caption): "Seen by 319/319 peers", "Updated 12:32 UTC" (iPad), and the MOAS warning when present.
+3. **Column headers** (graph) and **section titles** (list), in plain words:
+   - layer 0 "DESTINATION"
+   - layer 1 "NEXT TO GOOGLE", using the origin's uppercased short name, cut to 12 characters, and "NEXT TO ORIGIN" when the name is unknown or MOAS
+   - layer *n* ≥ 2 "*n* STEPS AWAY"
+   - List sections: "Next to Google · 229 networks", "2 steps away · 70 networks".
+4. **Your network is never folded:** `GraphBuildOptions.pinned = [myASN]`. A pinned AS that would fall into "+N more" is kept as an extra node after the top K, before the bucket, so that column shows K + 1. It gets a 2 pt **green** ring and a "YOU" capsule badge (caption2 bold, green fill, white text) on its top-left corner. VoiceOver: "Your network, AS 3320 …".
+5. **Legend** (`GraphLegend`): one compact row at the bottom of the canvas container (`bar-bg` material, caption2, 24 pt high, wraps to two lines at large sizes). Items:
+   - blue box: **Destination**
+   - a thin and a thick line: **Thicker = more routes**
+   - green dot: **RIPE peer**
+   - dashed box: **Grouped (+N more)**
+   - green ring: **You** (only when pinned)
+   A trailing `info.circle` opens "How to read this map": a 5-line sheet with the same items plus "Columns count steps away from the destination. Routes are seen by RIPE RIS collectors, not measured from your device." Hidden in List mode.
+6. **List mode** shows the same summary card on top. Rows are unchanged (§6.7) apart from the section titles and a "You" badge.
+
 ---
 
 ## 7. App icon
@@ -413,6 +620,10 @@ Supports Dark Mode, Dynamic Type, VoiceOver, iPad split view and keyboard shortc
   2. The system DNS resolver.
   3. `https://stat.ripe.net/data/...`: BGP lookups (the user's IP/prefix/ASN) and, if enabled, traceroute hop IPs.
   RIPEstat requests carry `sourceapp=ahmadrezaei-iptools` (as RIPE NCC asks) and no user identifiers. The About screen and the traceroute ASN toggle footnote say this in plain words.
+- **(v1.1) Your route.** BGP Map now also (a) asks RIPEstat for the device's public IP (`whats-my-ip`) and its network (`network-info` on that IP), and (b) when it measures, sends ICMP traceroute probes to the map's target and looks up the public router addresses at RIPEstat. This is honest and low-risk: RIPEstat already sees the public IP as the source of every HTTPS request, the app never stores the IP (memory only, cleared on network change), and nothing goes anywhere new. The privacy label stays **Data Not Collected**. Hop lookups follow the existing "Look up networks" toggle (§6.11.9).
+  - **PRIVACY.md wording change.** Item 1 becomes: "**The target you probe.** Ping, traceroute and BGP Map's *Your route* send ICMP packets only to the host, address or prefix you enter." Add to item 3: "When BGP Map shows *Your route*, the app asks RIPEstat which public IP address your connection uses and which network it belongs to, and looks up the public addresses of the routers on the way (if "Look up networks" is on). RIPEstat already sees that address on every request. The app keeps it in memory only and never sends it anywhere else."
+  - **About screen:** add one line under the RIPEstat line: "Your route: your public IP and router addresses are looked up at RIPEstat."
+  - **Traceroute toggle footnote** (§5.3) becomes: "Sends the public hop IP addresses to RIPEstat (RIPE NCC) to find which network they belong to. Also used by BGP Map › Your route."
 - **Stored locally:** recents (≤ 20 targets) and settings, in `UserDefaults`. Clear History is in About. Nothing is synced (no iCloud in v1).
 - **`PrivacyInfo.xcprivacy`:** `NSPrivacyTracking: false`, `NSPrivacyCollectedDataTypes: []`, `NSPrivacyAccessedAPITypes: [{ NSPrivacyAccessedAPICategoryUserDefaults, reasons: ["CA92.1"] }]`.
 - **Info.plist:** `NSLocalNetworkUsageDescription` = "IP Tools uses the local network to ping and trace devices on your network, such as your router." No `NSBonjourServices`. No ATS exceptions (everything is HTTPS).
@@ -463,6 +674,8 @@ Errors return HTTP 4xx with `status: "error"`, `data: {}` and the reason in `mes
 | `prefix-overview` | Prefix input: origins + holder + announced | `data.announced` (Bool), `data.asns[]` → `.asn` (**Int**), `.holder` (String); `data.resource`; `data.block.desc` (optional) | `1.1.1.0/24` → `announced: true`, `asns: [{asn: 13335, holder: "CLOUDFLARENET - Cloudflare, Inc."}]` |
 | `as-overview` | ASN input header | `data.holder` (String), `data.announced` (Bool), `data.resource` (String "13335") | `AS13335` → `holder: "CLOUDFLARENET - Cloudflare, Inc.", announced: true` |
 | `announced-prefixes` | ASN input → prefix picker | `data.prefixes[]` → `.prefix` (ignore `timelines`) | AS13335 → 5,748 prefixes, ~3.6 s. Show a spinner and cache. |
+| `whats-my-ip` (v1.1) | Your route: the device's public IP | `data.ip` (String). No `resource` parameter. **Never cached** | 2026-11-08: `{"data":{"ip":"91.107.240.242"}}` → `network-info` → `asns ["24940"]`, `prefix "91.107.128.0/17"` |
+| `bgp-state` (fallback, already implemented) | Graph routes when `looking-glass` is empty | `data.bgp_state[]` → `.path` ([Int]), `.source_id` ("00-102.208.105.2" → collector RRC00) | 2026-11-08: `looking-glass` 8.8.8.0/24 returned `rrcs: []` twice; `bgp-state` returned 369 routes, 23 collectors, layers 1/229/70/7 |
 | `routing-status` | Header chip "Seen by X/Y peers" (optional) | `data.visibility.v4.ris_peers_seeing`, `.total_ris_peers` (and `v6`), `data.origins[].origin` (**Int**), `data.last_seen.time` | `1.1.1.0/24` → v4 319/319 |
 
 **Short name rule** (`ASName.short(_:)`, used on nodes and badges):
@@ -1010,6 +1223,182 @@ public struct RootView: View { public init(environment: AppEnvironment) }
 - **Formatting:** Swift 6 defaults, 4-space indent, one main type per file. Files carry no attribution comments beyond the MIT header.
 - **Logging:** `os.Logger(subsystem: "com.ahmadrezaei.iptools", category: <module>)`, with no PII at `.public`.
 
+### 12.7 v1.1 architecture: Your route, All routes, Ping count
+There are **no `Package.swift` changes.** BGPFeature already depends on NetCore, RIPEstat, BGPGraph and SharedUI. BGPFeature must **not** depend on TraceFeature. A finished trace crosses over as a neutral `TraceSnapshot` (SharedUI), and BGPFeature does its own hop→ASN lookups through `RIPEstatAPI` (the client's URL cache makes repeats free).
+
+```
+Traceroute tab ──TraceSnapshot──▶ AppRouter ──ToolRequest.trace──▶ BGPMapModel
+                                                                   ├─ RIPEstat: looking-glass ‖ network-info ‖ whats-my-ip→network-info
+                                                                   ├─ BGPGraph: GraphBuilder(pinned: myASN) → All routes + RoutesSummary
+                                                                   └─ YourRouteModel: snapshot | ASChainBuilder.fromBGP | RouteMeasurer(TraceService + networkInfo)
+                                                                                      → ASChainBuilder.fromTrace → stitch → ASChain → views
+```
+
+**RIPEstat** (new: `WhatsMyIP` in `Models.swift`, parsing in `Parsing.swift`, fixture `whats-my-ip.json`)
+```swift
+public struct WhatsMyIP: Sendable, Hashable { public let ip: String }
+public protocol RIPEstatAPI: Sendable {
+    // … existing …
+    func whatsMyIP() async throws -> WhatsMyIP        // GET whats-my-ip/data.json?sourceapp=…, never cached, 10 s timeout
+}
+public extension RIPEstatAPI {                        // keeps existing test fakes compiling
+    func whatsMyIP() async throws -> WhatsMyIP { throw RIPEstatError.api(messages: ["whats-my-ip not supported"]) }
+}
+// RIPEstatClient + MockRIPEstat implement it; MockRIPEstat serves whats-my-ip.json (91.107.240.242).
+```
+
+**BGPGraph** (new files `ASChain.swift`, `ASChainBuilder.swift`, `RoutesSummary.swift`; changed `GraphBuilder.swift` for `pinned`)
+```swift
+public struct GraphBuildOptions: Hashable, Sendable {
+    public var maxNodesPerLayer: Int = 6
+    public var pinned: Set<UInt32> = []               // never folded into "+N more" (§6.12 item 4)
+    public init(maxNodesPerLayer: Int = 6, pinned: Set<UInt32> = [])
+}
+public struct ChainHop: Hashable, Sendable {           // neutral input; BGPGraph has no NetCore dependency
+    public enum Kind: Hashable, Sendable { case silent, privateAddress, unknownNetwork, network(UInt32) }
+    public let ttl: Int
+    public let kind: Kind
+    public let address: String?
+    public let hostname: String?
+    public let rtts: [TimeInterval]                   // answered probes only, seconds
+    public let reachedTarget: Bool                    // echo reply from the probe target
+    public init(ttl: Int, kind: Kind, address: String? = nil, hostname: String? = nil, rtts: [TimeInterval] = [], reachedTarget: Bool = false)
+}
+public struct ASChain: Hashable, Sendable {
+    public enum Source: Hashable, Sendable { case traceroute(handedOver: Bool, measuredAt: Date), bgp(collectors: [String]) }
+    public enum Completion: Hashable, Sendable { case inProgress, complete, gap, stitched }
+    public struct Node: Identifiable, Hashable, Sendable {
+        public enum Role: Hashable, Sendable { case you, transit, destination, youAndDestination }
+        public enum Provenance: Hashable, Sendable { case measured, bgp, expected }
+        public var id: String { get }                 // "you" when asn == nil, else "AS<n>"
+        public let asn: UInt32?                       // nil only for an unidentified You node
+        public let role: Role
+        public let provenance: Provenance
+        public let ttls: ClosedRange<Int>?            // measured nodes
+        public let answeredHops: Int
+        public let rttRange: ClosedRange<TimeInterval>?
+        public let hops: [ChainHop]                   // the hops inside this node (for "Show hops" / inspector)
+        public let routeCount: Int?                   // .bgp nodes
+        public let gapBefore: Bool                    // draw the "?" gap before this node
+    }
+    public let nodes: [Node]
+    public let source: Source
+    public let completion: Completion
+    public let reachedTarget: Bool
+    public let lastTTL: Int?
+    public let skippedHops: Int
+    public var asnSequence: [UInt32] { get }
+}
+public enum ASChainBuilder {
+    /// §6.11.6. Pure; call on every update.
+    public static func fromTrace(_ hops: [ChainHop], myASN: UInt32?, origins: [UInt32], finished: Bool,
+                                 source: ASChain.Source) -> ASChain
+    /// §6.11.4. nil when no cleaned path contains myASN.
+    public static func fromBGP(_ cleanedPaths: [ObservedPath], myASN: UInt32, origins: [UInt32]) -> ASChain?
+    /// §6.11.7. Returns `chain` unchanged unless completion == .gap and a suffix exists.
+    public static func stitch(_ chain: ASChain, cleanedPaths: [ObservedPath], origins: [UInt32]) -> ASChain
+}
+public struct RoutesSummary: Hashable, Sendable {     // §6.12 item 2
+    public let totalRoutes: Int
+    public let collectorCount: Int
+    public let directFraction: Double                 // paths with ≤ 2 ASNs ÷ total
+    public let handoffs: [UInt32]                     // ≤ 2 layer-1 ASNs by transitCount
+    public let myASNRouteCount: Int?                  // nil when myASN unknown; 0 = not present
+    public init(graph: ASGraph, collectorCount: Int, myASN: UInt32?)
+}
+```
+
+**SharedUI** (new `TraceSnapshot.swift`; changed `AppRouter.swift`, `NetworkMonitor.swift`)
+```swift
+public struct TraceSnapshot: Hashable, Sendable {
+    public struct Hop: Hashable, Sendable {
+        public let ttl: Int
+        public let address: IPAddress?                 // first responder
+        public let hostname: String?
+        public let asn: UInt32?
+        public let rtts: [TimeInterval]
+        public let reachedTarget: Bool
+        public init(ttl: Int, address: IPAddress?, hostname: String?, asn: UInt32?, rtts: [TimeInterval], reachedTarget: Bool)
+    }
+    public let target: ResolvedTarget
+    public let hops: [Hop]
+    public let completion: TraceCompletion?
+    public let finishedAt: Date
+    public init(target: ResolvedTarget, hops: [Hop], completion: TraceCompletion?, finishedAt: Date)
+}
+public struct ToolRequest: Equatable, Sendable {
+    public let target: String; public let autostart: Bool
+    public let trace: TraceSnapshot?                  // new
+    public init(target: String, autostart: Bool, trace: TraceSnapshot? = nil)
+}
+// AppRouter
+public func open(_ tool: Tool, target: String, autostart: Bool, trace: TraceSnapshot? = nil)
+// NetworkMonitor
+public private(set) var pathGeneration: Int          // +1 whenever interface types, status or gateways change
+```
+
+**TraceFeature** (changed `TraceModel.swift` only)
+```swift
+/// Hops 1…ttl (all when nil), only for finished/stopped runs; nil while running or empty.
+public func snapshot(upTo ttl: Int? = nil) -> TraceSnapshot?
+// mapTarget() → router.open(.bgp, target:, autostart: true, trace: snapshot())
+// mapHop(_:)  → router.open(.bgp, target:, autostart: true, trace: snapshot(upTo: hop.ttl)), with the hop marked reachedTarget
+```
+
+**NetCore:** no changes. `TraceService`/`Tracer`, `TraceOptions`, `IPAddress.isPubliclyRoutable` are reused as they are. `MockTraceService` drives previews and tests.
+
+**BGPFeature** (new files `YourRouteModel.swift`, `MyNetworkLocator.swift`, `RouteMeasurer.swift`, `PrefixMath.swift`, `YourRouteView.swift`, `ChainNodeView.swift`, `ChainRail.swift`, `HorizontalChainView.swift`, `RouteStatusCard.swift`, `RouteHopsList.swift`, `RouteExport.swift`, `AllRoutesSummaryCard.swift`, `GraphLegend.swift`. Changed: `BGPMapModel.swift`, `BGPMapView.swift`, `PrefixHeaderCard.swift`, `GraphCanvasView.swift`, `NodeView.swift`, `BGPListView.swift`, `ASDetailView.swift`, `BGPExport.swift`, `BGPPreviewData.swift`)
+```swift
+public enum BGPView: String, Sendable, CaseIterable { case yourRoute, allRoutes }
+public struct MyNetwork: Hashable, Sendable { public let ip: String; public let asn: UInt32?; public let prefix: String?; public var name: String? }
+actor MyNetworkLocator {                              // whats-my-ip → network-info, cached per pathGeneration (≤ 30 min)
+    init(api: any RIPEstatAPI)
+    func current(generation: Int) async -> MyNetwork?
+}
+struct RouteMeasurer: Sendable {                       // §6.11.5
+    enum Update: Sendable { case hops([ChainHop]), finished(reachedOrigin: Bool), failed(Error) }
+    init(service: any TraceService, api: any RIPEstatAPI)
+    func measure(_ target: ResolvedTarget, origins: Set<UInt32>, prefixTarget: Bool) -> AsyncStream<Update>
+}
+@MainActor @Observable public final class YourRouteModel {
+    public enum Phase: Equatable { case idle, locating, measuring(ttl: Int), done, partial(String), stopped(String),
+                                   lookupsOff, unavailable, failed(String) }
+    public private(set) var phase: Phase
+    public private(set) var chain: ASChain?
+    public private(set) var myNetwork: MyNetwork?
+    public var selection: String?                     // ASChain.Node.id
+    public func measureAgain()
+    public func stop(reason: String? = nil)
+    public var exportText: String { get }             // §6.11.11
+    public var accessibilitySentence: String { get }  // §6.11.10
+}
+@MainActor @Observable public final class BGPMapModel {
+    // … existing …
+    public var view: BGPView                          // default .yourRoute
+    public let route: YourRouteModel
+    public private(set) var summary: RoutesSummary?
+    public init(api: any RIPEstatAPI, recents: RecentsStore, router: AppRouter,
+                traceService: (any TraceService)? = nil,      // nil → Your route shows "unavailable" (keeps tests offline)
+                settings: SettingsStore? = nil, network: NetworkMonitor? = nil)
+    public func stopForBackground()                   // stops a running measurement
+}
+```
+
+**PingFeature** (new `PingCountMenu.swift`; changed `PingView.swift`, `PingSettingsView.swift`, `PingModel.swift` for the "3 of 10" header). No SharedUI change: the value is `SettingsStore.ping.count`, and the last custom value is in `@AppStorage("ping.lastCustomCount")`.
+
+**AppShell** (changed `AppEnvironment.swift`, `AboutView.swift`, `RootView.swift`): pass `Tracer()`, `settings` and `network` to `BGPMapModel`. `preview()` adds a `MockTraceService` script for the 8.8.8.8 trace in §6.11.6. RootView calls `bgp.stopForBackground()` on `.background`. About gets the privacy line from §9.
+
+#### 12.7.1 Work split: three parallel agents, no file overlap
+**Step 0 (coordinator, ~15 min, before the agents start):** commit the signatures above as compiling stubs (`fatalError("TODO")` bodies, `whatsMyIP` default extension, `ToolRequest.trace` defaulting to nil, `BGPMapModel.init` new parameters defaulted) so every agent builds against them. After that the signatures are frozen, and changes go through the coordinator.
+
+| Agent | Owns (exclusive) | Delivers | Tests |
+|---|---|---|---|
+| **L: Data & chain logic** | `Sources/RIPEstat/`, `Sources/BGPGraph/`, `Tests/RIPEstatTests/` (+ `Fixtures/whats-my-ip.json`), `Tests/BGPGraphTests/` (+ `Fixtures/bgp-state_8.8.8.0-24.json`, captured live) | `whatsMyIP` (client, parsing, mock), `GraphBuildOptions.pinned`, `ASChain`, `ASChainBuilder.fromTrace/fromBGP/stitch`, `RoutesSummary` | Table tests for every §6.11.6 rule using the worked example; the AS24940 ≠ first-hop case; A-B-A loop fold; absorbed silent hop; gap vs stitch (stitch through AS1299 on the 8.8.8.0/24 fixture; no stitch through AS13335); fromBGP on AS3320 → `[3320, 15169]` ×2; summary 369 / 23 / 75% / [214292, 3356]; pinned AS3320 stays visible with K = 6 |
+| **B: BGP UI** | `Sources/BGPFeature/`, `Tests/FeatureTests/BGP*` (new helpers go in `BGPTestSupport.swift`, not in the shared `TestSupport.swift`) | §6.11 and §6.12 UI: segments, Your route (vertical + iPad horizontal), status card, rail, hops list, measurer, locator, model, stop rules, stitching wiring, inspector "On your route", ASDetailView for non-graph ASNs, summary card, legend, column headers, YOU badge, export, previews for every §6.11.9 state | Model tests with `MockTraceService` + fake API: source choice order 1→2→3, each stop rule a–f, partial/stopped/lookups-off states, snapshot reuse and its 10-min expiry |
+| **S: Shell, Trace, Ping** | `Sources/SharedUI/`, `Sources/TraceFeature/`, `Sources/PingFeature/`, `Sources/AppShell/`, `App/`, `Tests/FeatureTests/{Ping,Trace,Shell,SharedUI,FeatureSmoke}Tests.swift`, `Tests/FeatureTests/TestSupport.swift`, `PRIVACY.md`, `README.md` | `TraceSnapshot`, router `trace:` parameter, `NetworkMonitor.pathGeneration`, `TraceModel.snapshot(upTo:)` + cross-links, **Ping count chip (§4.3.1)** + settings-sheet sync + "3 of 10" header, AppEnvironment wiring + preview trace script, background stop, About/PRIVACY/footnote wording (§9) | Snapshot contents (full / up to hop, nil while running); router carries the snapshot; ping count: custom validation 1…10,000, chip ⇄ settings sync, disabled while running, header "3 of 10" |
+
+Merge order: L → S → B (B's integration test of the handed-over trace needs S's router). Any order compiles thanks to Step 0. Phase 2 (one agent): run on a device on cellular, with VPN on and off, and on IPv6. Retake `docs/screenshots/iphone-bgp-map.png` in the Your route view.
+
 ---
 
 ## 13. Open questions & risks
@@ -1022,6 +1411,13 @@ public struct RootView: View { public init(environment: AppEnvironment) }
 5. **Minimum iOS 17.** That gives `@Observable`, `ContentUnavailableView`, `.inspector` and `MagnifyGesture`. iOS 18's `.sidebarAdaptable` TabView would simplify navigation but would drop iOS 17 users. *Recommendation: keep 17 and the size-class switch.*
 6. **Category:** Utilities vs Developer Tools as the primary. *Recommendation: Utilities, which has broader search traffic.*
 
+**v1.1 decisions for you (Your route & Ping count):**
+7. **Source A before a fresh traceroute.** When your AS is a RIS peer, the BGP path shows instantly with no probing, and "Measure with traceroute" is one tap away. *Recommendation: yes.* The alternative is to always measure (truer but slower, and it probes on every map).
+8. **Stitching a stalled trace with a BGP suffix,** dashed and tagged "from BGP". *Recommendation: yes, as specified in §6.11.7.* The alternative is to always show the "?" gap.
+9. **Hop lookups follow the Traceroute "Look up networks" toggle.** *Recommendation: yes,* to respect a user who turned it off. Your route then asks to turn it on.
+10. **Auto-measure on every Map.** A ~10 s traceroute runs in the background even if the user only wanted All routes. *Recommendation: yes,* because Your route is the default view. The alternative is a "Measure my route" button.
+11. **Custom ping count upper bound 10,000** (2.8 h at 1 s). *Recommendation: keep.*
+
 **Risks:**
 - **R1 (medium impact, low probability):** ICMP Time Exceeded may not reach DGRAM sockets on some iOS release, which would break traceroute. *Mitigation:* the day-1 device spike, before any UI work depends on it.
 - **R2: RIPEstat availability, rate limits or schema drift.** *Mitigation:* tolerant decoding (unknown fields ignored, all optional except the core ones), clear error state, fixtures in tests, and `sourceapp` set so RIPE can contact the project.
@@ -1029,5 +1425,7 @@ public struct RootView: View { public init(environment: AppEnvironment) }
 - **R4: Local Network prompt confusion.** *Mitigation:* the prompt appears only when the user targets a LAN address, and the denied state explains how to fix it.
 - **R5: App Review.** Network utilities with ICMP are common and allowed. Make sure the description does not over-claim (no "speed test").
 - **R6: Reverse DNS latency** slowing the traceroute UI. *Mitigation:* async enrichment that never blocks the probe loop.
+- **R7 (v1.1): Traceroute and BGP disagree** (e.g. Cloudflare → Google is in no RIS route). *Mitigation:* every chain says where it came from. Measured data wins, stitched parts are tagged, and the inspector explains that collectors see only part of the Internet.
+- **R8 (v1.1): The You AS is not the first traced AS** (VPN, iCloud Private Relay, tunnels). *Mitigation:* rule 5 in §6.11.6 shows both without claiming a hop inside the user's AS. Private Relay does not affect ICMP, but it may change what `whats-my-ip` returns for Safari. The app uses URLSession, which Private Relay does not proxy by default.
 
 **Out of scope for v1 (deliberately):** mtr-style continuous traceroute, TCP/UDP ping, whois, DNS lookup tool, history of past results, iCloud sync, widgets/Live Activities, Mac Catalyst, localisation beyond English.
