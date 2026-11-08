@@ -28,8 +28,18 @@ import TraceFeature
 
     /// Pinger, Tracer, RIPEstatClient.
     public static func live() -> AppEnvironment {
-        AppEnvironment(router: AppRouter(), recents: RecentsStore(), settings: SettingsStore(), network: NetworkMonitor(),
-                       pingService: Pinger(), traceService: Tracer(), api: RIPEstatClient())
+        #if DEBUG
+        if let mode = ScreenshotMode.current {
+            let defaults = ScreenshotMode.isolatedDefaults()
+            let env = AppEnvironment(router: AppRouter(), recents: RecentsStore(defaults: defaults),
+                                     settings: SettingsStore(defaults: defaults), network: NetworkMonitor(),
+                                     pingService: Pinger(), traceService: Tracer(), api: RIPEstatClient())
+            mode.apply(to: env)
+            return env
+        }
+        #endif
+        return AppEnvironment(router: AppRouter(), recents: RecentsStore(), settings: SettingsStore(), network: NetworkMonitor(),
+                              pingService: Pinger(), traceService: Tracer(), api: RIPEstatClient())
     }
 
     /// The 8.8.8.8 trace of DESIGN §6.11.6 (hop 10 silent). Other targets get the same script.

@@ -52,3 +52,22 @@ import SharedUI
         env.recents.clear()
     }
 }
+
+#if DEBUG
+@Suite struct ScreenshotModeTests {
+    @Test func parsesArguments() {
+        let m = ScreenshotMode(arguments: ["app", "-screenshotTool", "bgp", "-screenshotTarget", "1.1.1.1",
+                                           "-screenshotExpandHeader", "YES", "-screenshotPingCount", "5"])
+        #expect(m?.tool == .bgp)
+        #expect(m?.target == "1.1.1.1")
+        #expect(m?.expandHeader == true)
+        #expect(m?.pingCount == 5)
+    }
+
+    @Test func absentOrInvalidToolIsNil() {
+        #expect(ScreenshotMode(arguments: ["app"]) == nil)
+        #expect(ScreenshotMode(arguments: ["app", "-screenshotTool", "nope"]) == nil)
+        #expect(ScreenshotMode(arguments: ["app", "-screenshotTool"]) == nil)
+    }
+}
+#endif
