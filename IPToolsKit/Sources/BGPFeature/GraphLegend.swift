@@ -49,8 +49,22 @@ private struct LegendFlow: Layout {
     func sizeThatFits(proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) -> CGSize {
         let width = proposal.width ?? .infinity
         let laid = rows(subviews, width: width)
-        let height = laid.map { $0.map(\.size.height).max() ?? 0 }.reduce(0, +) + lineSpacing * CGFloat(max(laid.count - 1, 0))
-        let used = laid.map { $0.map(\.size.width).reduce(0, +) + spacing * CGFloat(max($0.count - 1, 0)) }.max() ?? 0
+        var height: CGFloat = 0
+        var used: CGFloat = 0
+        for row in laid {
+            var rowHeight: CGFloat = 0
+            var rowWidth: CGFloat = 0
+            for item in row {
+                rowHeight = Swift.max(rowHeight, item.size.height)
+                rowWidth += item.size.width
+            }
+            let gaps: CGFloat = CGFloat(Swift.max(row.count - 1, 0))
+            rowWidth += spacing * gaps
+            height += rowHeight
+            used = Swift.max(used, rowWidth)
+        }
+        let rowGaps: CGFloat = CGFloat(Swift.max(laid.count - 1, 0))
+        height += lineSpacing * rowGaps
         return CGSize(width: proposal.width ?? used, height: height)
     }
 
