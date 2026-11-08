@@ -37,7 +37,7 @@ public struct TraceSettingsView: View {
                 Toggle("Resolve hostnames (reverse DNS)", isOn: $settings.trace.resolveHostnames)
                 Toggle("Look up networks (ASN, via RIPEstat)", isOn: $settings.trace.lookUpASNs)
             } footer: {
-                Text("Sends the public hop IP addresses to RIPEstat (RIPE NCC) to find which network they belong to.")
+                Text("Sends the public hop IP addresses to RIPEstat (RIPE NCC) to find which network they belong to. Also used by BGP Map › Your route.")
             }
             Section {
                 Picker("IP version", selection: $settings.addressPreference) {

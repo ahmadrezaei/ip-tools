@@ -231,4 +231,76 @@ import SharedUI
         #expect(again?.asn == 15169)
         #expect(api.networkInfoCallCount == 2)   // per IP, cached on repeat
     }
+
+    // MARK: Snapshots (DESIGN 12.7)
+
+    private func finishedModel(router: AppRouter = AppRouter()) async -> TraceModel {
+        let (model, _, _) = makeModel(router: router)
+        model.targetText = "1.1.1.1"
+        model.start()
+        _ = await waitUntil { if case .finished = model.phase { true } else { false } }
+        return model
+    }
+
+    @Test func snapshotIsNilWhileRunningOrEmpty() async {
+        let (model, _, _) = makeModel()
+        #expect(model.snapshot() == nil)
+        model.targetText = "1.1.1.1"
+        model.start()
+        #expect(model.snapshot() == nil)
+        _ = await waitUntil { if case .finished = model.phase { true } else { false } }
+        #expect(model.snapshot() != nil)
+    }
+
+    @Test func snapshotHoldsAllHopsOrUpToTTL() async {
+        let model = await finishedModel()
+        let full = model.snapshot()
+        #expect(full?.hops.map(\.ttl) == [1, 2, 3, 4])
+        #expect(full?.target.address == dest)
+        #expect(full?.completion == .reachedDestination(hops: 4))
+        #expect(full?.hops[3].reachedTarget == true)
+        #expect(full?.hops[0].reachedTarget == false)
+        #expect(full?.hops[0].address == hop1)
+        #expect(full?.hops[1].rtts.count == 2)       // the timed-out probe is dropped
+        let partial = model.snapshot(upTo: 2)
+        #expect(partial?.hops.map(\.ttl) == [1, 2])
+        #expect(model.snapshot(upTo: 0) == nil)
+    }
+
+    @Test func snapshotCarriesASNAndStopStatus() async {
+        let model = await finishedModel()
+        #expect(model.snapshot()?.hops[2].asn == nil)
+        let (stopped, _, _) = makeModel()
+        stopped.targetText = "1.1.1.1"
+        stopped.start()
+        _ = await waitUntil { !stopped.hops.isEmpty }
+        stopped.stop()
+        let snapshot = stopped.snapshot()
+        #expect(snapshot != nil)
+        #expect(snapshot?.completion == nil)
+    }
+
+    @Test func mapTargetHandsOverFullSnapshot() async {
+        let router = AppRouter()
+        let model = await finishedModel(router: router)
+        model.mapTarget()
+        let request = router.takeRequest(for: .bgp)
+        #expect(request?.target == "1.1.1.1")
+        #expect(request?.autostart == true)
+        #expect(request?.trace?.hops.count == 4)
+        #expect(request?.trace?.target.address == dest)
+    }
+
+    @Test func mapHopHandsOverHopsUpToThatHopMarkedAsTarget() async {
+        let router = AppRouter()
+        let model = await finishedModel(router: router)
+        model.mapHop(hop3)
+        let request = router.takeRequest(for: .bgp)
+        #expect(request?.target == "141.101.65.1")
+        let trace = request?.trace
+        #expect(trace?.target.address == hop3)
+        #expect(trace?.hops.map(\.ttl) == [1, 2, 3])
+        #expect(trace?.hops.last?.reachedTarget == true)
+        #expect(trace?.hops.first?.reachedTarget == false)
+    }
 }

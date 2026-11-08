@@ -3,9 +3,28 @@
 
 import BGPGraph
 import Foundation
+import NetCore
 import Observation
+import RIPEstat
+import SharedUI
 
 public enum BGPView: String, Sendable, CaseIterable { case yourRoute, allRoutes }
+
+/// What the route needs to know about the map that was just loaded.
+struct RouteContext {
+    var label: String                       // what the user typed ("8.8.8.8", "cloudflare.com", "8.8.8.0/24")
+    var address: IPAddress?                 // IP / hostname input: the address being mapped
+    var hostname: String?
+    var prefix: String
+    var origins: [UInt32]
+    var paths: [ObservedPath]               // cleaned RIS paths
+    var collectorLocations: [String: String]
+    var snapshot: TraceSnapshot?
+
+    var isPrefixTarget: Bool { address == nil }
+}
+
+struct RouteAnnouncement: Equatable { let id: Int; let text: String }
 
 @MainActor @Observable public final class YourRouteModel {
     public enum Phase: Equatable {
@@ -17,10 +36,299 @@ public enum BGPView: String, Sendable, CaseIterable { case yourRoute, allRoutes 
     public private(set) var myNetwork: MyNetwork?
     public var selection: String?                     // ASChain.Node.id
 
+    private(set) var context: RouteContext?
+    private(set) var names: [UInt32: String] = [:]
+    private(set) var announcement: RouteAnnouncement?
+    private(set) var privacyNoteSeen = false
+
+    @ObservationIgnored private var api: (any RIPEstatAPI)?
+    @ObservationIgnored private var service: (any TraceService)?
+    @ObservationIgnored private var settings: SettingsStore?
+    @ObservationIgnored var now: @Sendable () -> Date = { Date() }
+    @ObservationIgnored private var task: Task<Void, Never>?
+    @ObservationIgnored private var namesTask: Task<Void, Never>?
+    @ObservationIgnored private var requestedNames: Set<UInt32> = []
+    @ObservationIgnored private(set) var hops: [ChainHop] = []
+    @ObservationIgnored private var startedAt = Date()
+    @ObservationIgnored private var lastAnnouncementAt: Date?
+    @ObservationIgnored private var runID = 0
+    @ObservationIgnored private var announcedASNs: Set<UInt32> = []
+
+    static let snapshotMaxAge: TimeInterval = 10 * 60
+
     public init() {}
 
-    public func measureAgain() { fatalError("TODO") }
-    public func stop(reason: String? = nil) {}
-    public var exportText: String { fatalError("TODO") }              // DESIGN 6.11.11
-    public var accessibilitySentence: String { fatalError("TODO") }   // DESIGN 6.11.10
+    func configure(api: any RIPEstatAPI, service: (any TraceService)?, settings: SettingsStore?) {
+        self.api = api
+        self.service = service
+        self.settings = settings
+    }
+
+    // MARK: Lifecycle
+
+    var isMeasuring: Bool { if case .measuring = phase { true } else { false } }
+    var myASN: UInt32? { myNetwork?.asn }
+    var lookupsEnabled: Bool { settings?.trace.lookUpASNs ?? true }
+
+    /// Clears everything and cancels a running measurement.
+    func reset() {
+        runID += 1
+        task?.cancel()
+        namesTask?.cancel()
+        task = nil
+        phase = .idle
+        chain = nil
+        context = nil
+        hops = []
+        selection = nil
+    }
+
+    func beginLocating() {
+        reset()
+        phase = .locating
+    }
+
+    func setMyNetwork(_ network: MyNetwork?) {
+        myNetwork = network.map { net in
+            var net = net
+            if let asn = net.asn { net.name = BGPText.shortName(names[asn]) }
+            return net
+        }
+    }
+
+    /// Picks the chain source (DESIGN 6.11.2): handed-over trace, then BGP, then a fresh traceroute.
+    func begin(_ context: RouteContext, myNetwork: MyNetwork?) {
+        reset()
+        self.context = context
+        setMyNetwork(myNetwork)
+        if let snapshot = context.snapshot, let address = context.address, snapshot.target.address == address,
+           now().timeIntervalSince(snapshot.finishedAt) <= Self.snapshotMaxAge {
+            useSnapshot(snapshot, context)
+            return
+        }
+        if let asn = myASN,
+           let bgp = ASChainBuilder.fromBGP(context.paths, myASN: asn, origins: context.origins) {
+            chain = bgp
+            phase = .done
+            requestNames()
+            return
+        }
+        startMeasuring()
+    }
+
+    /// "Measure again" / "Measure with traceroute": always a fresh traceroute (rule 3).
+    public func measureAgain() {
+        guard context != nil else { return }
+        runID += 1
+        task?.cancel()
+        selection = nil
+        startMeasuring()
+    }
+
+    func turnOnLookups() {
+        settings?.trace.lookUpASNs = true
+        measureAgain()
+    }
+
+    public func stop(reason: String? = nil) {
+        guard case let .measuring(ttl) = phase else { return }
+        runID += 1
+        task?.cancel()
+        let title = reason.map { String(localized: "Stopped: \($0)") } ?? String(localized: "Stopped at hop \(ttl)")
+        if let context, !hops.isEmpty {
+            chain = ASChainBuilder.fromTrace(hops, myASN: myASN, origins: context.origins, finished: true,
+                                             source: .traceroute(handedOver: false, measuredAt: now()))
+        } else {
+            chain = nil
+        }
+        phase = .stopped(title)
+        announce(title, force: true)
+    }
+
+    // MARK: Sources
+
+    private func useSnapshot(_ snapshot: TraceSnapshot, _ context: RouteContext) {
+        hops = snapshot.hops.map { hop in
+            let kind: ChainHop.Kind
+            if let address = hop.address {
+                if !address.isPubliclyRoutable { kind = .privateAddress }
+                else if let asn = hop.asn { kind = .network(asn) }
+                else { kind = .unknownNetwork }
+            } else {
+                kind = .silent
+            }
+            return ChainHop(ttl: hop.ttl, kind: kind, address: hop.address?.description, hostname: hop.hostname,
+                            rtts: hop.rtts, reachedTarget: hop.reachedTarget)
+        }
+        finish(source: .traceroute(handedOver: true, measuredAt: snapshot.finishedAt), stitch: true)
+    }
+
+    private func startMeasuring() {
+        guard let context else { return }
+        guard let service, let api else { phase = .unavailable; chain = nil; return }
+        guard lookupsEnabled else { phase = .lookupsOff; chain = nil; return }
+        guard let probe = probeTarget(context) else {
+            phase = .failed(String(localized: "This target can't be traced."))
+            return
+        }
+        hops = []
+        announcedASNs = []
+        startedAt = now()
+        chain = placeholderChain()
+        phase = .measuring(ttl: 0)
+        let id = runID
+        let stream = RouteMeasurer(service: service, api: api)
+            .measure(probe, origins: Set(context.origins), prefixTarget: context.isPrefixTarget)
+        task = Task { [weak self] in
+            for await update in stream {
+                guard let self, id == self.runID else { return }
+                self.apply(update)
+            }
+        }
+    }
+
+    private func probeTarget(_ context: RouteContext) -> ResolvedTarget? {
+        let address = context.address ?? PrefixMath.probeAddress(forPrefix: context.prefix)
+        guard let address else { return nil }
+        return ResolvedTarget(input: context.label, address: address, hostname: context.hostname, allAddresses: [address])
+    }
+
+    private func apply(_ update: RouteMeasurer.Update) {
+        switch update {
+        case let .hops(list):
+            hops = list
+            guard let context, !list.isEmpty else { return }
+            let built = ASChainBuilder.fromTrace(list, myASN: myASN, origins: context.origins, finished: false,
+                                                 source: .traceroute(handedOver: false, measuredAt: startedAt))
+            chain = built
+            let ttl = built.lastTTL ?? list.last?.ttl ?? 0
+            phase = .measuring(ttl: ttl)
+            requestNames()
+            if let node = built.nodes.last(where: { $0.provenance == .measured && $0.role == .transit }),
+               let asn = node.asn, announcedASNs.insert(asn).inserted {
+                announce(String(localized: "\(shortName(asn) ?? "AS \(asn)") found at hop \(node.ttls?.lowerBound ?? ttl)"))
+            }
+        case .finished:
+            finish(source: .traceroute(handedOver: false, measuredAt: now()), stitch: true)
+        case let .failed(error):
+            phase = .failed(BGPFailure.from(error).message(for: error))
+        }
+    }
+
+    private func finish(source: ASChain.Source, stitch: Bool) {
+        guard let context else { return }
+        var built = ASChainBuilder.fromTrace(hops, myASN: myASN, origins: context.origins, finished: true, source: source)
+        if stitch { built = ASChainBuilder.stitch(built, cleanedPaths: context.paths, origins: context.origins) }
+        chain = built
+        requestNames()
+        phase = finalPhase(for: built)
+        announce(statusTitle, force: true)
+    }
+
+    private func finalPhase(for chain: ASChain) -> Phase {
+        let hasNetwork = hops.contains { if case .network = $0.kind { true } else { false } }
+        switch chain.completion {
+        case .complete, .inProgress:
+            return .done
+        case .stitched, .gap:
+            if !hasNetwork { return .partial(String(localized: "No router on the way answered")) }
+            let hop = chain.lastTTL ?? 0
+            if chain.completion == .stitched {
+                let last = chain.nodes.last { $0.provenance == .measured }
+                let name = last?.asn.flatMap { shortName($0) ?? "AS\($0)" } ?? String(localized: "your network")
+                return .partial(String(localized: "Traceroute stopped in \(name) at hop \(hop)"))
+            }
+            return .partial(String(localized: "Traceroute couldn't see past hop \(hop)"))
+        }
+    }
+
+    private func placeholderChain() -> ASChain? {
+        guard let context, let origin = context.origins.first else { return nil }
+        let you = ASChain.Node(asn: myASN, role: .you, provenance: .measured)
+        let destination = ASChain.Node(asn: origin, role: .destination, provenance: .expected, gapBefore: true)
+        return ASChain(nodes: myASN == origin ? [ASChain.Node(asn: origin, role: .youAndDestination, provenance: .measured)]
+                                              : [you, destination],
+                       source: .traceroute(handedOver: false, measuredAt: startedAt), completion: .inProgress, reachedTarget: false)
+    }
+
+    // MARK: Names
+
+    func shortName(_ asn: UInt32?) -> String? {
+        asn.flatMap { BGPText.shortName(names[$0]) }
+    }
+
+    func fullName(_ asn: UInt32?) -> String? {
+        asn.flatMap { BGPText.fullName(names[$0]) }
+    }
+
+    func ingestNames(_ raw: [UInt32: String]) {
+        let before = names.count
+        names.merge(raw.filter { !$0.value.isEmpty }) { _, new in new }
+        guard names.count != before || myNetwork?.name == nil else { return }
+        if var network = myNetwork, let asn = network.asn, network.name == nil {
+            network.name = BGPText.shortName(names[asn])
+            myNetwork = network
+        }
+    }
+
+    /// Debounced (500 ms) bulk `as-names` for the networks on the chain.
+    private func requestNames() {
+        guard let api else { return }
+        var wanted = Set(chain?.asnSequence ?? [])
+        if let asn = myASN { wanted.insert(asn) }
+        wanted.formUnion(context?.origins ?? [])
+        let missing = wanted.subtracting(names.keys).subtracting(requestedNames)
+        guard !missing.isEmpty else { return }
+        namesTask?.cancel()
+        namesTask = Task { [weak self] in
+            try? await Task.sleep(for: .milliseconds(500))
+            guard !Task.isCancelled, let self else { return }
+            let list = missing.subtracting(self.names.keys).sorted()
+            guard !list.isEmpty else { return }
+            self.requestedNames.formUnion(list)
+            if let fetched = try? await api.asNames(list), !Task.isCancelled { self.ingestNames(fetched) }
+        }
+    }
+
+    // MARK: Announcements (VoiceOver)
+
+    private func announce(_ text: String, force: Bool = false) {
+        let date = Date()
+        if !force, let last = lastAnnouncementAt, date.timeIntervalSince(last) < 3 { return }
+        lastAnnouncementAt = date
+        announcement = RouteAnnouncement(id: (announcement?.id ?? 0) + 1, text: text)
+    }
+
+    func markPrivacyNoteSeen() { privacyNoteSeen = true }
 }
+
+private extension BGPFailure {
+    func message(for error: Error) -> String {
+        if let net = error as? NetError {
+            switch net {
+            case .networkUnreachable(let family):
+                return family == .v6 ? String(localized: "No IPv6 route — this network doesn't support IPv6.")
+                                     : String(localized: "No route — this network can't reach that address.")
+            case .localNetworkDenied: return String(localized: "Local network access is turned off for IP Tools.")
+            case .socketUnavailable: return String(localized: "Couldn't open a network socket.")
+            default: break
+            }
+        }
+        return message
+    }
+}
+
+#if DEBUG
+extension YourRouteModel {
+    /// Puts the model into a given state for previews and tests, without measuring.
+    func installPreview(phase: Phase, chain: ASChain?, context: RouteContext?, names: [UInt32: String], myNetwork: MyNetwork?,
+                        hops: [ChainHop] = []) {
+        self.phase = phase
+        self.chain = chain
+        self.context = context
+        self.names = names
+        self.myNetwork = myNetwork
+        self.hops = hops
+    }
+}
+#endif

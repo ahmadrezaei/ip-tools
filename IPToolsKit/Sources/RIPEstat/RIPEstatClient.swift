@@ -43,6 +43,7 @@ public final class RIPEstatClient: RIPEstatAPI, Sendable {
 
     static let userAgent = "IPTools/1.0 (iOS; github.com/ahmadrezaei/ip-tools)"
     static let requestTimeout: TimeInterval = 30
+    static let whatsMyIPTimeout: TimeInterval = 10
     static let namesChunkSize = 200
 
     public init(session: URLSession = .shared,
@@ -133,28 +134,36 @@ public final class RIPEstatClient: RIPEstatAPI, Sendable {
         try RIPEstatParsing.routingStatus(try await fetch("routing-status", resource: prefix))
     }
 
+    public func whatsMyIP() async throws -> WhatsMyIP {
+        try RIPEstatParsing.whatsMyIP(try await fetch("whats-my-ip", resource: nil, cached: false,
+                                                       timeout: Self.whatsMyIPTimeout))
+    }
+
     // MARK: Internals
 
     func bgpState(_ resource: String) async throws -> LookingGlass {
         try RIPEstatParsing.bgpState(try await fetch("bgp-state", resource: resource))
     }
 
-    func url(call: String, resource: String) -> URL {
+    func url(call: String, resource: String?) -> URL {
         let allowed = CharacterSet(charactersIn: "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789-._~/:,")
-        let encoded = resource.addingPercentEncoding(withAllowedCharacters: allowed) ?? resource
+        let encoded = resource.flatMap { $0.addingPercentEncoding(withAllowedCharacters: allowed) } ?? ""
         let source = sourceApp.addingPercentEncoding(withAllowedCharacters: allowed) ?? sourceApp
         var components = URLComponents(url: baseURL.appendingPathComponent(call).appendingPathComponent("data.json"),
                                        resolvingAgainstBaseURL: false)!
-        components.percentEncodedQuery = "resource=\(encoded)&sourceapp=\(source)"
+        components.percentEncodedQuery = resource == nil
+            ? "sourceapp=\(source)" : "resource=\(encoded)&sourceapp=\(source)"
         return components.url!
     }
 
     /// GET with caching, concurrency limit, and HTTP/URL error mapping. Returns the body of a 2xx response, or of
     /// a 4xx response that carries a RIPEstat envelope (so the parser can raise `.api(messages:)`).
-    func fetch(_ call: String, resource: String) async throws -> Data {
+    func fetch(_ call: String, resource: String?, cached useCache: Bool = true,
+               timeout: TimeInterval = RIPEstatClient.requestTimeout) async throws -> Data {
         let url = url(call: call, resource: resource)
-        if let cached = await cache.data(for: url) { return cached }
-        var request = URLRequest(url: url, timeoutInterval: Self.requestTimeout)
+        if useCache, let cached = await cache.data(for: url) { return cached }
+        var request = URLRequest(url: url, timeoutInterval: timeout)
+        if !useCache { request.cachePolicy = .reloadIgnoringLocalCacheData }
         request.setValue(Self.userAgent, forHTTPHeaderField: "User-Agent")
         request.setValue("application/json", forHTTPHeaderField: "Accept")
 
@@ -173,7 +182,7 @@ public final class RIPEstatClient: RIPEstatAPI, Sendable {
         switch status {
         case 200..<300:
             // Cache only envelopes that report success.
-            if let probe = try? JSONDecoder().decode(EnvelopeProbe.self, from: data), probe.status == "ok" {
+            if useCache, let probe = try? JSONDecoder().decode(EnvelopeProbe.self, from: data), probe.status == "ok" {
                 await cache.store(data, for: url)
             }
             return data

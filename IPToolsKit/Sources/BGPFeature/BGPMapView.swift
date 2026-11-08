@@ -15,6 +15,7 @@ public struct BGPMapView: View {
     @Environment(\.dynamicTypeSize) private var typeSize
     @State private var showDetails = false
     @State private var appliedDefaultMode = false
+    @State private var showLegend = false
 
     public init(model: BGPMapModel) {
         self.model = model
@@ -40,16 +41,18 @@ public struct BGPMapView: View {
         .sheet(isPresented: pickerBinding) { picker }
         .sheet(isPresented: detailsSheetBinding) { detailsSheet }
         .inspector(isPresented: inspectorBinding) {
-            if let selection = model.selection {
-                ASDetailView(model: model, id: selection)
-                    .inspectorColumnWidth(min: 280, ideal: 340, max: 420)
-            }
+            detailContent
+                .inspectorColumnWidth(min: 280, ideal: 340, max: 420)
         }
+        .sheet(isPresented: $showLegend) { GraphLegendSheet(showsYou: model.myASN != nil) }
         .task { model.consumeRouterRequest() }
         .onChange(of: model.router.selectedTool) { _, tool in if tool == .bgp { model.consumeRouterRequest() } }
         .onChange(of: model.router.requestTick) { model.consumeRouterRequest() }
         .onChange(of: model.detailsToken) { _, _ in if !isRegular { showDetails = true } }
-        .onChange(of: model.selection) { _, new in if new == nil { showDetails = false } }
+        .onChange(of: model.selection) { _, new in if new == nil, model.route.selection == nil { showDetails = false } }
+        .onChange(of: model.route.selection) { _, new in
+            if new == nil, model.selection == nil { showDetails = false } else if new != nil, !isRegular { showDetails = true }
+        }
         .onAppear {
             if voiceOver, !appliedDefaultMode { model.displayMode = .list }
             appliedDefaultMode = true
@@ -115,15 +118,31 @@ public struct BGPMapView: View {
 
     private var loaded: some View {
         VStack(spacing: 8) {
-            PrefixHeaderCard(result: model.result, hostLine: model.hostLine, showUpdated: isRegular) { asn in
+            PrefixHeaderCard(result: model.result, hostLine: model.hostLine) { asn in
                 model.requestDetails(for: .asn(asn))
             }
-            Picker("View", selection: $model.displayMode) {
-                Text("Graph").tag(BGPMapModel.DisplayMode.graph)
-                Text("List").tag(BGPMapModel.DisplayMode.list)
+            Picker("View", selection: $model.view) {
+                Text("Your route").tag(BGPView.yourRoute)
+                Text("All routes").tag(BGPView.allRoutes).accessibilityLabel("All routes worldwide")
             }
             .pickerStyle(.segmented)
             .padding(.horizontal)
+            switch model.view {
+            case .yourRoute:
+                YourRouteView(model: model)
+            case .allRoutes:
+                allRoutes
+            }
+        }
+        .padding(.top, 8)
+    }
+
+    private var allRoutes: some View {
+        VStack(spacing: 8) {
+            if let result = model.result, let summary = model.summary {
+                AllRoutesSummaryCard(result: result, summary: summary, myNetwork: model.myNetwork, mode: $model.displayMode,
+                                     showUpdated: isRegular) { model.view = .yourRoute }
+            }
             if model.displayMode == .graph, typeSize >= .accessibility1 {
                 Label("Larger text works best in List view", systemImage: "list.bullet")
                     .font(.footnote).foregroundStyle(.secondary)
@@ -131,7 +150,11 @@ public struct BGPMapView: View {
             ZStack(alignment: .bottom) {
                 switch model.displayMode {
                 case .graph:
-                    GraphCanvasView(model: model).padding(.horizontal).padding(.bottom, 8)
+                    VStack(spacing: 6) {
+                        GraphCanvasView(model: model)
+                        GraphLegend(showsYou: model.myASN != nil) { showLegend = true }
+                    }
+                    .padding(.horizontal).padding(.bottom, 8)
                 case .list:
                     BGPListView(model: model)
                 }
@@ -146,7 +169,20 @@ public struct BGPMapView: View {
             }
             .animation(.snappy, value: model.selection)
         }
-        .padding(.top, 8)
+    }
+
+    /// What the sheet / inspector shows: the selected chain node in Your route, else the selected graph node.
+    @ViewBuilder private var detailContent: some View {
+        if model.view == .yourRoute, let id = model.route.selection,
+           let node = model.route.chain?.nodes.first(where: { $0.id == id }) {
+            ASDetailView(model: model, routeNode: node)
+        } else if let selection = model.selection {
+            ASDetailView(model: model, id: selection)
+        }
+    }
+
+    private var hasDetailSelection: Bool {
+        (model.view == .yourRoute && model.route.selection != nil) || model.selection != nil
     }
 
     // MARK: Sheets
@@ -165,20 +201,19 @@ public struct BGPMapView: View {
     }
 
     private var detailsSheetBinding: Binding<Bool> {
-        Binding(get: { showDetails && !isRegular && model.selection != nil }, set: { showDetails = $0 })
+        Binding(get: { showDetails && !isRegular && hasDetailSelection },
+                set: { showDetails = $0; if !$0 { model.route.selection = nil } })
     }
 
     @ViewBuilder private var detailsSheet: some View {
-        if let selection = model.selection {
-            ASDetailView(model: model, id: selection)
-                .presentationDetents([.medium, .large])
-                .presentationDragIndicator(.visible)
-        }
+        detailContent
+            .presentationDetents([.medium, .large])
+            .presentationDragIndicator(.visible)
     }
 
     private var inspectorBinding: Binding<Bool> {
-        Binding(get: { isRegular && model.selection != nil && model.phase == .loaded },
-                set: { if !$0 { model.selection = nil } })
+        Binding(get: { isRegular && hasDetailSelection && model.phase == .loaded },
+                set: { if !$0 { model.selection = nil; model.route.selection = nil } })
     }
 
     // MARK: Toolbar
@@ -201,10 +236,10 @@ public struct BGPMapView: View {
                     Label("Show per column", systemImage: "ellipsis.circle")
                 }
             }
-            .disabled(model.result == nil)
+            .disabled(model.result == nil || model.view == .yourRoute)
             Menu {
                 ShareLink(item: model.exportText) { Label("Share as text", systemImage: "text.alignleft") }
-                if let result = model.result, let layout = model.layout, !layout.frames.isEmpty {
+                if model.view == .allRoutes, let result = model.result, let layout = model.layout, !layout.frames.isEmpty {
                     ShareLink(item: GraphImageExport(result: result, layout: layout),
                               preview: SharePreview("BGP graph for \(result.prefix)")) {
                         Label("Share as image", systemImage: "photo")
@@ -213,7 +248,7 @@ public struct BGPMapView: View {
             } label: {
                 Label("Share", systemImage: "square.and.arrow.up")
             }
-            .disabled(model.result == nil)
+            .disabled(model.result == nil || (model.view == .yourRoute && model.route.chain == nil))
         }
     }
 }

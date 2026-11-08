@@ -31,7 +31,7 @@
 |---|---|
 | 🛰️ **Ping** | ICMP echo to any IPv4 or IPv6 address or hostname. A live RTT chart, plus min / avg / max, jitter and packet loss. |
 | 🧭 **Traceroute** | Hop-by-hop path discovery over IPv4 or IPv6. Each hop shows its response times, reverse DNS hostname and the **ASN / network** that owns it. |
-| 🗺️ **BGP Map** | Enter an IP, prefix or ASN to see an interactive graph of the **AS paths** toward the origin AS, built from live routes seen by the **RIPE RIS** route collectors. A BGP looking glass in your pocket. |
+| 🗺️ **BGP Map** | Enter an IP, prefix or ASN to see **Your route**, the chain of networks your traffic crosses, and an interactive graph of the **AS paths** toward the origin AS, built from live routes seen by the **RIPE RIS** route collectors. A BGP looking glass in your pocket. |
 
 ## Features
 
@@ -39,7 +39,8 @@
 - Ping IPv4, IPv6 and hostnames (automatic, IPv4-only or IPv6-only)
 - Live round-trip time chart (Swift Charts) with an average line and timeout markers
 - Statistics: min, average, max, jitter (mean difference between consecutive replies), packet loss, received count
-- Settings for count (stops after 10 by default; up to 100 or until stopped), interval, timeout and packet size
+- **Ping count menu** under the target bar: choose 5, 10, 20, 50, 100, until stopped, or any custom number from 1 to 10,000 (10 by default). It stays in sync with Settings, and the status line shows progress such as "3 of 10"
+- Settings for count, interval, timeout and packet size
 - Copy or share results as plain text
 
 ### Traceroute
@@ -47,9 +48,11 @@
 - Reverse DNS hostnames for each hop
 - **ASN lookup for each hop**: see where your ISP hands off to a transit provider, IXP or CDN
 - Private, CGNAT and link-local hops are labelled locally, with no lookup
-- From any hop, ping it or map it in the BGP view; share the whole trace as text
+- From any hop, ping it or map it in the BGP view (your measured trace carries over to **Your route**); share the whole trace as text
 
 ### BGP Map (AS path viewer)
+- **Your route** (the default view): the networks between you and the target, as a simple chain of ASes. It comes from your own traceroute, or straight from BGP when your network peers with RIPE RIS
+- **All routes** (worldwide): the graph described below
 - Accepts an **IP address**, **prefix** (e.g. `1.1.1.0/24`) or **AS number** (e.g. `AS13335`, which opens a prefix picker)
 - Layered graph with the origin AS on the right, then 1 hop, 2 hops and so on. Edge thickness shows how many paths use each link
 - Tap an AS to highlight every path through it. Details include the AS name, role, collectors and sample paths
@@ -68,6 +71,7 @@
 - **No account, no ads, no analytics, no tracking. No data is collected.**
 - Ping and traceroute run entirely on your device, using unprivileged ICMP sockets.
 - Only BGP Map queries and the ASN lookup for public traceroute hops contact **RIPEstat** (`stat.ripe.net`, run by the RIPE NCC). You can turn the hop lookup off in Settings.
+- **Your route** sends your public IP address to RIPEstat to identify your network, and looks up the public router addresses on the way. RIPEstat already sees that address on every request, and the app keeps it in memory only.
 
 Full policy: [PRIVACY.md](PRIVACY.md).
 
@@ -118,6 +122,12 @@ Yes. iOS supports unprivileged ICMP datagram sockets. IP Tools uses them directl
 **Where does the BGP data come from?**
 From the RIPE NCC's Routing Information Service (RIS), via the public RIPEstat Data API. RIS route collectors peer with hundreds of networks worldwide, so the map shows how the Internet as a whole reaches a prefix, not just your own ISP.
 
+**Can it show the path my traffic takes?**
+Yes. BGP Map's *Your route* view shows the networks between you and the target. It uses a traceroute measured on your device, or, when your network peers with RIPE RIS, the route seen in BGP.
+
+**Can I change how many pings are sent?**
+Yes. Use the count menu under the target bar: 5, 10, 20, 50, 100, until stopped, or a custom number from 1 to 10,000.
+
 **Why doesn't traceroute show every hop?**
 Some routers don't answer ICMP or rate-limit it. Those hops show `* * *`, just as the command-line `traceroute` does.
 
@@ -136,4 +146,4 @@ BGP data © RIPE NCC, provided through [RIPEstat](https://stat.ripe.net/).
 
 ---
 
-<sub>Keywords: ping app for iPhone, traceroute iOS, iPad network tools, BGP looking glass, AS path viewer, ASN lookup, IP tools, network diagnostic app, ICMP ping, IPv6 traceroute, RIPEstat, RIPE RIS, open-source iOS network utility, SwiftUI networking app.</sub>
+<sub>Keywords: ping app for iPhone, ping count, my route to a server, network path viewer, traceroute iOS, iPad network tools, BGP looking glass, AS path viewer, ASN lookup, IP tools, network diagnostic app, ICMP ping, IPv6 traceroute, RIPEstat, RIPE RIS, open-source iOS network utility, SwiftUI networking app.</sub>

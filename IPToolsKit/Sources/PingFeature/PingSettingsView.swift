@@ -9,6 +9,7 @@ public struct PingSettingsView: View {
     @Bindable private var settings: SettingsStore
     @Environment(\.aboutSection) private var about
     private let showsAbout: Bool
+    @State private var showCustom = false
 
     /// `showsAbout` appends the app shell's About section (when one is injected) to the form.
     public init(settings: SettingsStore, showsAbout: Bool = true) {
@@ -28,7 +29,11 @@ public struct PingSettingsView: View {
                     ForEach(Self.counts, id: \.self) { count in
                         if let count { Text("\(count)").tag(Optional(count)) } else { Text("Until stopped").tag(Optional<Int>.none) }
                     }
+                    if let custom = PingCount.customValue(settings.ping.count) {
+                        Text("Custom (\(custom))").tag(Optional(custom))
+                    }
                 }
+                Button("Custom…") { showCustom = true }
                 Picker("Interval", selection: $settings.ping.interval) {
                     ForEach(Self.intervals, id: \.self) { Text("\($0, format: .number) s").tag($0) }
                 }
@@ -52,6 +57,7 @@ public struct PingSettingsView: View {
             }
             if showsAbout, let about { about }
         }
+        .pingCountAlert(isPresented: $showCustom, count: $settings.ping.count)
         .navigationTitle("Ping Settings")
     }
 }

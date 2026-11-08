@@ -3,12 +3,11 @@
 
 import SwiftUI
 
-/// Prefix, origin(s) and summary chips above the graph.
+/// Compact prefix and origin(s) above both views; the chips live in the All routes summary.
 struct PrefixHeaderCard: View {
     let result: BGPResult?
     var hostLine: String?
     var isLoading = false
-    var showUpdated = false
     var onSelectASN: (UInt32) -> Void = { _ in }
 
     var body: some View {
@@ -21,11 +20,9 @@ struct PrefixHeaderCard: View {
                     Text(verbatim: hostLine).font(.footnote).foregroundStyle(.secondary)
                 }
                 originRows(result)
-                chips(result)
             } else if isLoading {
                 Text(verbatim: "0.0.0.0/24").font(.system(size: 20, weight: .bold, design: .monospaced))
                 Text(verbatim: "Origin AS00000 Placeholder").font(.subheadline)
-                Text(verbatim: "000 paths · 00 collectors").font(.caption)
             }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
@@ -59,38 +56,6 @@ struct PrefixHeaderCard: View {
                 Text("+\(origins.count - 3) more origins").font(.footnote).foregroundStyle(.secondary)
             }
         }
-    }
-
-    private func chips(_ result: BGPResult) -> some View {
-        ScrollView(.horizontal, showsIndicators: false) {
-            HStack(spacing: 6) {
-                if result.originASNs.count > 1 {
-                    chip(String(localized: "\(result.originASNs.count) origin ASes"), systemImage: "exclamationmark.triangle.fill", tint: .orange)
-                }
-                chip(String(localized: "\(result.graph.totalPaths) paths"))
-                chip(String(localized: "\(result.collectors.count) collectors"))
-                if let visibility = result.visibility {
-                    chip(String(localized: "Seen by \(visibility.seeing)/\(visibility.total) peers"))
-                }
-                if result.graph.totalPaths < 3 {
-                    chip(String(localized: "Seen by few collectors"), tint: .orange)
-                }
-                if showUpdated, let time = result.latestTime {
-                    chip(String(localized: "Updated \(Self.timeFormatter.string(from: time)) UTC"))
-                }
-            }
-        }
-    }
-
-    private func chip(_ text: String, systemImage: String? = nil, tint: Color = .secondary) -> some View {
-        HStack(spacing: 4) {
-            if let systemImage { Image(systemName: systemImage) }
-            Text(text)
-        }
-        .font(.caption.weight(.medium))
-        .foregroundStyle(tint == .secondary ? Color.primary : tint)
-        .padding(.horizontal, 9).padding(.vertical, 4)
-        .background(Capsule().fill(tint.opacity(tint == .secondary ? 0.12 : 0.18)))
     }
 
     static let timeFormatter: DateFormatter = {

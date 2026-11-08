@@ -48,7 +48,11 @@ public struct TraceHop: Identifiable, Hashable, Sendable {
     public typealias ReverseDNSFunction = @Sendable (IPAddress) async -> ReverseLookupResult
 
     public var targetText: String = ""
-    public internal(set) var phase: Phase = .idle
+    public internal(set) var phase: Phase = .idle {
+        didSet {
+            if isBusy { endedAt = nil } else if endedAt == nil { endedAt = Date() }
+        }
+    }
     public internal(set) var hops: [TraceHop] = []
     public internal(set) var resolved: ResolvedTarget?
     public internal(set) var error: ToolError?
@@ -64,6 +68,8 @@ public struct TraceHop: Identifiable, Hashable, Sendable {
     @ObservationIgnored let resolve: ResolveFunction
     @ObservationIgnored let reverseDNS: ReverseDNSFunction
     @ObservationIgnored private var task: Task<Void, Never>?
+    /// When the last run stopped or finished; stamped on the snapshot.
+    @ObservationIgnored private var endedAt: Date?
     @ObservationIgnored private var generation = 0
     @ObservationIgnored private var requested: Set<IPAddress> = []
     @ObservationIgnored private var hostnameCache: [IPAddress: String?] = [:]
@@ -175,9 +181,26 @@ public struct TraceHop: Identifiable, Hashable, Sendable {
         router.open(.ping, target: address.description, autostart: true)
     }
 
+    /// Opens the BGP map for a hop, handing over the hops up to it; that hop counts as the target.
     public func mapHop(_ address: IPAddress) {
         guard address.isPubliclyRoutable else { return }
-        router.open(.bgp, target: address.description, autostart: true)
+        let trace: TraceSnapshot?
+        if address == resolved?.address {
+            trace = snapshot()
+        } else if let hop = hops.first(where: { $0.addresses.contains(address) }), let base = snapshot(upTo: hop.ttl) {
+            let target = ResolvedTarget(input: address.description, address: address, hostname: hop.hostname,
+                                        allAddresses: [address])
+            let marked = base.hops.map { entry in
+                entry.ttl == hop.ttl
+                    ? TraceSnapshot.Hop(ttl: entry.ttl, address: entry.address, hostname: entry.hostname, asn: entry.asn,
+                                        rtts: entry.rtts, reachedTarget: true)
+                    : entry
+            }
+            trace = TraceSnapshot(target: target, hops: marked, completion: base.completion, finishedAt: base.finishedAt)
+        } else {
+            trace = nil
+        }
+        router.open(.bgp, target: address.description, autostart: true, trace: trace)
     }
 
     public func mapTarget() {
@@ -185,7 +208,22 @@ public struct TraceHop: Identifiable, Hashable, Sendable {
     }
 
     /// Hops 1...ttl (all when nil), only for finished/stopped runs; nil while running or empty.
-    public func snapshot(upTo ttl: Int? = nil) -> TraceSnapshot? { nil }
+    public func snapshot(upTo ttl: Int? = nil) -> TraceSnapshot? {
+        guard let resolved, !hops.isEmpty else { return nil }
+        let completion: TraceCompletion?
+        switch phase {
+        case let .finished(value): completion = value
+        case .stopped: completion = nil
+        default: return nil
+        }
+        let limit = ttl ?? Int.max
+        let entries = hops.filter { $0.ttl <= limit }.map { hop in
+            TraceSnapshot.Hop(ttl: hop.ttl, address: hop.addresses.first, hostname: hop.hostname, asn: hop.asn?.asn,
+                              rtts: hop.rtts, reachedTarget: hop.isDestination)
+        }
+        guard !entries.isEmpty else { return nil }
+        return TraceSnapshot(target: resolved, hops: entries, completion: completion, finishedAt: endedAt ?? Date())
+    }
 
     public var canMapTarget: Bool { resolved?.address.isPubliclyRoutable ?? false }
 

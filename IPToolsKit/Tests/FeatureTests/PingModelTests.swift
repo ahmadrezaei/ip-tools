@@ -261,6 +261,67 @@ import SharedUI
         #expect(PingChart.niceMax(100) == 200)
         #expect(PingChart.niceMax(8) == 10)
     }
+
+    // MARK: Count chip (DESIGN 4.3.1)
+
+    @Test func customCountValidationIsOneToTenThousand() {
+        #expect(PingCount.validated("1") == 1)
+        #expect(PingCount.validated("10000") == 10_000)
+        #expect(PingCount.validated(" 37 ") == 37)
+        #expect(PingCount.validated("0") == nil)
+        #expect(PingCount.validated("-5") == nil)
+        #expect(PingCount.validated("10001") == nil)
+        #expect(PingCount.validated("") == nil)
+        #expect(PingCount.validated("1.5") == nil)
+        #expect(PingCount.validated("abc") == nil)
+        #expect(PingCount.exceedsLimit("10001"))
+        #expect(!PingCount.exceedsLimit("10000"))
+        #expect(!PingCount.exceedsLimit("abc"))
+    }
+
+    @Test func chipLabelsAndCustomRow() {
+        #expect(PingCount.label(10) == "10 pings")
+        #expect(PingCount.label(nil) == "Until stopped")
+        #expect(PingCount.customValue(10) == nil)
+        #expect(PingCount.customValue(nil) == nil)
+        #expect(PingCount.customValue(37) == 37)
+    }
+
+    @Test func chipAndSettingsShareOneValue() async {
+        let ip = cloudflare
+        let (model, _, settings) = makeModel(script: [.reply(rtt: 0.01, bytes: 64, ttl: 58, from: ip)], count: 10)
+        // The chip and the settings picker both write SettingsStore.ping.count.
+        settings.ping.count = 37
+        #expect(PingCount.customValue(model.settings.ping.count) == 37)
+        model.settings.ping.count = nil
+        #expect(settings.ping.count == nil)
+        model.settings.ping.count = 2
+        model.targetText = "1.1.1.1"
+        model.start()
+        #expect(await waitUntil { model.phase == .finished })
+        #expect(model.samples.count == 2)
+    }
+
+    @Test func chipDisabledWhileRunningAndCountCapturedAtStart() async {
+        let ip = cloudflare
+        let (model, _, settings) = makeModel(script: [.reply(rtt: 0.01, bytes: 64, ttl: 58, from: ip)], count: 10)
+        #expect(!model.isBusy)
+        model.targetText = "1.1.1.1"
+        model.start()
+        #expect(model.isBusy)                       // PingView passes isDisabled: model.isBusy to the chip
+        #expect(await waitUntil { model.phase == .running })
+        #expect(model.isBusy)
+        #expect(model.runCount == 10)
+        settings.ping.count = 3                     // applies to the next Start only
+        #expect(model.runCount == 10)
+        model.stop()
+        #expect(!model.isBusy)
+    }
+
+    @Test func headerShowsProgressAsThreeOfTen() {
+        #expect(PingCount.progress(sent: 3, count: 10) == "3 of 10")
+        #expect(PingCount.progress(sent: 3, count: nil) == "3 sent")
+    }
 }
 
 final class CallCounter: @unchecked Sendable {

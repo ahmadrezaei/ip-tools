@@ -27,6 +27,9 @@ struct AboutSections: View {
             Text("No accounts, ads, analytics or tracking. Ping and traceroute run on your device and talk only to the host you enter and your DNS resolver. BGP lookups, and traceroute hop addresses if lookups are on, are sent to RIPEstat (stat.ripe.net) without any identifier. Recent targets and settings stay on this device.")
                 .font(.footnote)
                 .foregroundStyle(.secondary)
+            Text("Your route: your public IP and router addresses are looked up at RIPEstat.")
+                .font(.footnote)
+                .foregroundStyle(.secondary)
             Link(destination: Self.repositoryURL) {
                 Label("Source code on GitHub", systemImage: "chevron.left.forwardslash.chevron.right")
             }

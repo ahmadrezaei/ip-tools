@@ -5,6 +5,7 @@
 import BGPGraph
 import CoreGraphics
 import Foundation
+import NetCore
 import RIPEstat
 import SharedUI
 import SwiftUI
@@ -113,10 +114,10 @@ import SwiftUI
         return GraphLayout(size: size, frames: frames, edges: edges, columnHeaders: headers)
     }
 
-    static func result(k: Int = 4) -> (BGPResult, GraphLayout) {
+    static func result(k: Int = 4, prefix: String = "1.1.1.0/24") -> (BGPResult, GraphLayout) {
         let graph = graph(k: k)
         let collectors = (0..<5).map { LookingGlass.Collector(id: String(format: "RRC%02d", $0), location: "Somewhere") }
-        let result = BGPResult(prefix: "1.1.1.0/24", origins: [ASHolder(asn: 13335, holder: names[13335] ?? "")], graph: graph,
+        let result = BGPResult(prefix: prefix, origins: [ASHolder(asn: 13335, holder: names[13335] ?? "")], graph: graph,
                                collectors: collectors, visibility: .init(seeing: 319, total: 319), latestTime: Date(), names: names)
         return (result, layout(graph))
     }
@@ -144,11 +145,89 @@ extension BGPMapModel {
     func installPreview(result: BGPResult, layout: GraphLayout) {
         install(result: result, layout: layout)
         setPreviewPhase(.loaded, failure: nil)
+        updateSummary()
     }
 
     func setPreviewPhase(_ phase: Phase, failure: BGPFailure?) {
         self.phase = phase
         self.failure = failure
+    }
+}
+
+/// Hand-made routes and models for the Your route previews (no tracing, no network).
+@MainActor enum BGPRoutePreviewData {
+    static let names: [UInt32: String] = [
+        24940: "HETZNER-AS Hetzner Online GmbH", 13335: "CLOUDFLARENET - Cloudflare, Inc.", 15169: "GOOGLE - Google LLC",
+        3320: "DTAG Deutsche Telekom AG", 1299: "TWELVE99 Arelion Sweden AB",
+    ]
+    static let me = MyNetwork(ip: "91.107.240.242", asn: 24940, prefix: "91.107.128.0/17", name: "Hetzner Online")
+    static let date = Date(timeIntervalSince1970: 1_794_000_060)
+
+    static func context(prefixTarget: Bool = false) -> RouteContext {
+        let paths = [
+            ObservedPath(asns: [3320, 15169], collector: "RRC01", peerIP: "192.0.2.1"),
+            ObservedPath(asns: [3320, 15169], collector: "RRC03", peerIP: "192.0.2.2"),
+            ObservedPath(asns: [1299, 15169], collector: "RRC00", peerIP: "192.0.2.3"),
+        ]
+        return RouteContext(label: prefixTarget ? "8.8.8.0/24" : "8.8.8.8", address: prefixTarget ? nil : IPAddress("8.8.8.8"),
+                            hostname: nil, prefix: "8.8.8.0/24", origins: [15169], paths: paths,
+                            collectorLocations: ["RRC01": "London, United Kingdom", "RRC03": "Amsterdam, Netherlands"], snapshot: nil)
+    }
+
+    private static func hop(_ ttl: Int, _ address: String, _ kind: ChainHop.Kind, ms: Double?, reached: Bool = false) -> ChainHop {
+        ChainHop(ttl: ttl, kind: kind, address: address, rtts: ms.map { [$0 / 1000, $0 / 1000 + 0.002] } ?? [], reachedTarget: reached)
+    }
+
+    static let youHops = [hop(1, "192.168.70.1", .privateAddress, ms: 3.5), hop(2, "172.16.21.1", .privateAddress, ms: 107),
+                          hop(3, "10.99.7.1", .privateAddress, ms: 127)]
+    static let cloudflareHops = [hop(4, "104.28.0.0", .network(13335), ms: 136), hop(5, "172.71.133.1", .network(13335), ms: 136),
+                                 hop(6, "141.101.67.186", .network(13335), ms: 136), hop(7, "141.101.67.57", .network(13335), ms: 144)]
+    static let googleHops = [hop(8, "108.170.255.223", .network(15169), ms: 146), hop(9, "72.14.237.93", .network(15169), ms: 145),
+                             ChainHop(ttl: 10, kind: .silent),
+                             hop(11, "8.8.8.8", .network(15169), ms: 144, reached: true)]
+
+    static let you = ASChain.Node(asn: 24940, role: .you, provenance: .measured, ttls: 1...3, answeredHops: 3,
+                                  rttRange: 0.003...0.133, hops: youHops)
+    static let cloudflare = ASChain.Node(asn: 13335, role: .transit, provenance: .measured, ttls: 4...7, answeredHops: 4,
+                                         rttRange: 0.128...0.151, hops: cloudflareHops)
+    static let google = ASChain.Node(asn: 15169, role: .destination, provenance: .measured, ttls: 8...11, answeredHops: 3,
+                                     rttRange: 0.139...0.152, hops: googleHops)
+    static let expected = ASChain.Node(asn: 15169, role: .destination, provenance: .expected, gapBefore: true)
+    private static let source = ASChain.Source.traceroute(handedOver: false, measuredAt: date)
+
+    static let done = ASChain(nodes: [you, cloudflare, google], source: source, completion: .complete, reachedTarget: true, lastTTL: 11)
+    static let handedOver = ASChain(nodes: [you, cloudflare, google], source: .traceroute(handedOver: true, measuredAt: date),
+                                    completion: .complete, reachedTarget: true, lastTTL: 11)
+    static let measuring = ASChain(nodes: [you, ASChain.Node(asn: 13335, role: .transit, provenance: .measured, ttls: 4...6,
+                                                              answeredHops: 3, rttRange: 0.128...0.144, hops: Array(cloudflareHops.prefix(3))),
+                                           expected],
+                                   source: source, completion: .inProgress, reachedTarget: false, lastTTL: 6)
+    static let gap = ASChain(nodes: [you, cloudflare, expected], source: source, completion: .gap, reachedTarget: false, lastTTL: 7)
+    static let stitched = ASChain(
+        nodes: [you, ASChain.Node(asn: 1299, role: .transit, provenance: .measured, ttls: 4...9, answeredHops: 6,
+                                  rttRange: 0.01...0.04, hops: []),
+                ASChain.Node(asn: 15169, role: .destination, provenance: .bgp, routeCount: 6, gapBefore: true)],
+        source: source, completion: .stitched, reachedTarget: false, lastTTL: 9)
+    static let noAnswer = ASChain(nodes: [ASChain.Node(asn: nil, role: .you, provenance: .measured), expected],
+                                  source: source, completion: .gap, reachedTarget: false, lastTTL: nil)
+    static let bgp = ASChain(
+        nodes: [ASChain.Node(asn: 3320, role: .you, provenance: .bgp, routeCount: 2),
+                ASChain.Node(asn: 15169, role: .destination, provenance: .bgp, routeCount: 2)],
+        source: .bgp(collectors: ["RRC01", "RRC03"]), completion: .complete, reachedTarget: false)
+    static let own = ASChain(nodes: [ASChain.Node(asn: 15169, role: .youAndDestination, provenance: .bgp, routeCount: 3)],
+                             source: .bgp(collectors: ["RRC01"]), completion: .complete, reachedTarget: false)
+
+    static func model(_ phase: YourRouteModel.Phase, _ chain: ASChain?, mine: MyNetwork? = me,
+                      view: BGPView = .yourRoute) -> BGPMapModel {
+        BGPPreviewData.model { model in
+            let (result, layout) = BGPPreviewData.result(prefix: "8.8.8.0/24")
+            model.targetText = "8.8.8.8"
+            model.myNetwork = mine
+            model.installPreview(result: result, layout: layout)
+            model.view = view
+            model.route.installPreview(phase: phase, chain: chain, context: context(), names: names, myNetwork: mine,
+                                       hops: youHops + cloudflareHops + (8...12).map { ChainHop(ttl: $0, kind: .silent) })
+        }
     }
 }
 
@@ -198,5 +277,55 @@ extension BGPMapModel {
 
 #Preview("AS details") {
     ASDetailView(model: BGPPreviewData.loadedModel(selection: .asn(3356)), id: .asn(3356))
+}
+
+// MARK: Your route
+
+#Preview("Route: done") { NavigationStack { BGPMapView(model: BGPRoutePreviewData.model(.done, BGPRoutePreviewData.done)) } }
+#Preview("Route: handed over") { NavigationStack { BGPMapView(model: BGPRoutePreviewData.model(.done, BGPRoutePreviewData.handedOver)) } }
+#Preview("Route: measuring") { NavigationStack { BGPMapView(model: BGPRoutePreviewData.model(.measuring(ttl: 6), BGPRoutePreviewData.measuring)) } }
+#Preview("Route: locating") { NavigationStack { BGPMapView(model: BGPRoutePreviewData.model(.locating, nil)) } }
+#Preview("Route: seen in BGP") { NavigationStack { BGPMapView(model: BGPRoutePreviewData.model(.done, BGPRoutePreviewData.bgp)) } }
+#Preview("Route: gap") {
+    NavigationStack { BGPMapView(model: BGPRoutePreviewData.model(.partial("Traceroute couldn't see past hop 7"), BGPRoutePreviewData.gap)) }
+}
+#Preview("Route: stitched") {
+    NavigationStack { BGPMapView(model: BGPRoutePreviewData.model(.partial("Traceroute stopped in Arelion at hop 9"), BGPRoutePreviewData.stitched)) }
+}
+#Preview("Route: stopped") {
+    NavigationStack { BGPMapView(model: BGPRoutePreviewData.model(.stopped("Stopped at hop 6"), BGPRoutePreviewData.measuring)) }
+}
+#Preview("Route: no answer") {
+    NavigationStack { BGPMapView(model: BGPRoutePreviewData.model(.partial("No router on the way answered"), BGPRoutePreviewData.noAnswer)) }
+}
+#Preview("Route: own network") { NavigationStack { BGPMapView(model: BGPRoutePreviewData.model(.done, BGPRoutePreviewData.own)) } }
+#Preview("Route: lookups off") { NavigationStack { BGPMapView(model: BGPRoutePreviewData.model(.lookupsOff, nil)) } }
+#Preview("Route: unavailable") { NavigationStack { BGPMapView(model: BGPRoutePreviewData.model(.unavailable, nil)) } }
+#Preview("Route: failed") {
+    NavigationStack {
+        BGPMapView(model: BGPRoutePreviewData.model(.failed("No IPv6 route — this network doesn't support IPv6."), nil))
+    }
+}
+#Preview("Route: details") {
+    ASDetailView(model: BGPRoutePreviewData.model(.done, BGPRoutePreviewData.done), routeNode: BGPRoutePreviewData.cloudflare)
+}
+
+// MARK: All routes
+
+#Preview("All routes") {
+    NavigationStack { BGPMapView(model: BGPRoutePreviewData.model(.done, BGPRoutePreviewData.done, view: .allRoutes)) }
+}
+#Preview("All routes, list") {
+    NavigationStack {
+        BGPMapView(model: BGPRoutePreviewData.model(.done, BGPRoutePreviewData.done, view: .allRoutes).withMode(.list))
+    }
+}
+#Preview("Legend") { GraphLegendSheet(showsYou: true) }
+
+extension BGPMapModel {
+    func withMode(_ mode: DisplayMode) -> BGPMapModel {
+        displayMode = mode
+        return self
+    }
 }
 #endif

@@ -41,6 +41,18 @@ enum RIPEstatParsing {
                            originASNs: (dto.asns ?? []).compactMap(\.value))
     }
 
+    // MARK: whats-my-ip
+
+    struct WhatsMyIPDTO: Decodable, Sendable { let ip: String? }
+
+    static func whatsMyIP(_ data: Data) throws -> WhatsMyIP {
+        let dto = try payload(data, as: WhatsMyIPDTO.self)
+        guard let ip = dto.ip?.trimmingCharacters(in: .whitespacesAndNewlines), !ip.isEmpty else {
+            throw RIPEstatError.decoding("Missing ip")
+        }
+        return WhatsMyIP(ip: ip)
+    }
+
     // MARK: prefix-overview
 
     struct PrefixOverviewDTO: Decodable, Sendable {

@@ -10,6 +10,7 @@ struct GraphEdgesLayer: View {
     let highlight: BGPHighlight?
     var zoom = ZoomPanState()
     var metrics = LayoutMetrics()
+    var originName: String?
 
     var body: some View {
         Canvas { context, _ in
@@ -48,12 +49,7 @@ struct GraphEdgesLayer: View {
 
     private func drawHeaders(_ context: inout GraphicsContext) {
         for header in layout.columnHeaders {
-            let title: String
-            switch header.layer {
-            case 0: title = String(localized: "ORIGIN")
-            case 1: title = String(localized: "1 HOP")
-            default: title = String(localized: "\(header.layer) HOPS")
-            }
+            let title = BGPText.columnTitle(layer: header.layer, originName: originName)
             let text = Text(title).font(.caption2.weight(.semibold)).foregroundStyle(.secondary)
             context.draw(text, at: CGPoint(x: header.centerX, y: metrics.padding + metrics.headerHeight / 2), anchor: .center)
         }
@@ -107,19 +103,21 @@ struct GraphCanvasView: View {
                 .contentShape(Rectangle())
                 .gesture(SpatialTapGesture(count: 2).onEnded { toggleFit(at: $0.location) })
                 .gesture(SpatialTapGesture(count: 1).onEnded { _ in model.selection = nil })
-            GraphEdgesLayer(layout: layout, highlight: model.highlight, zoom: zoom)
+            GraphEdgesLayer(layout: layout, highlight: model.highlight, zoom: zoom, originName: BGPText.originName(result))
             ZStack(alignment: .topLeading) {
                 ForEach(nodes) { node in
                     if let frame = layout.frames[node.id], let summary = stats?.summary(for: node.id, graph: result.graph) {
                         let name = node.id.asnValue.flatMap { BGPText.shortName(result.holder(of: $0)) }
                         Button { tap(node) } label: {
                             NodeView(node: node, name: name, isSelected: selectedID == node.id,
-                                     isDimmed: model.highlight.map { !$0.nodes.contains(node.id) } ?? false)
+                                     isDimmed: model.highlight.map { !$0.nodes.contains(node.id) } ?? false,
+                                     isYou: isYou(node))
                         }
                         .buttonStyle(.plain)
                         .frame(width: frame.width, height: frame.height)
                         .position(x: frame.midX, y: frame.midY)
-                        .accessibilityLabel(BGPText.accessibilityLabel(for: summary, names: result.names))
+                        .accessibilityLabel((isYou(node) ? String(localized: "Your network, ") : "")
+                                            + BGPText.accessibilityLabel(for: summary, names: result.names))
                         .accessibilityHint(Text("Double-tap to highlight its paths"))
                         .accessibilityAddTraits(selectedID == node.id ? .isSelected : [])
                         .accessibilitySortPriority(order[node.id] ?? 0)
@@ -147,8 +145,13 @@ struct GraphCanvasView: View {
             .padding(12)
         }
         .accessibilityElement(children: .contain)
-        .accessibilityLabel(String(localized: "AS path graph, \(nodes.count) networks, \(layout.columnHeaders.count) columns"))
+        .accessibilityLabel(String(localized: "All routes worldwide: AS path graph, \(nodes.count) networks, \(layout.columnHeaders.count) columns"))
         .accessibilityAction(named: Text("Show as list")) { model.displayMode = .list }
+    }
+
+    private func isYou(_ node: GraphNode) -> Bool {
+        guard let mine = model.myASN, case let .asn(asn) = node.id else { return false }
+        return asn == mine
     }
 
     // MARK: Gestures

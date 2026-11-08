@@ -31,6 +31,7 @@ public struct PingView: View {
                 systemImage: "dot.radiowaves.left.and.right", mode: .host, primaryTitle: "Start",
                 isRunning: model.isBusy, isEnabled: true, recents: model.recentsStore,
                 onSubmit: { model.start() }, onStop: { model.stop() })
+            optionsRow
             content
         }
         .background(Color.screenBackground)
@@ -46,6 +47,25 @@ public struct PingView: View {
         }
         .onAppear { model.consumePendingRequest() }
         .onChange(of: model.router?.requestTick) { model.consumePendingRequest() }
+    }
+
+    private var optionsRow: some View {
+        let settings = model.settings
+        let options = settings.ping
+        let count = Binding<Int?>(get: { settings.ping.count }, set: { settings.ping.count = $0 })
+        return HStack(spacing: 10) {
+            PingCountMenu(count: count, isDisabled: model.isBusy)
+            Button { showSettings = true } label: {
+                Text("every \(options.interval, format: .number) s · \(options.payloadSize) bytes")
+                    .font(.footnote)
+                    .foregroundStyle(.secondary)
+                    .frame(minHeight: 44)
+            }
+            .buttonStyle(.plain)
+            .accessibilityHint("Opens Ping Settings")
+            Spacer(minLength: 0)
+        }
+        .padding(.horizontal)
     }
 
     @ViewBuilder private var content: some View {
@@ -131,6 +151,7 @@ public struct PingView: View {
                     let version = target.address.family == .v6 ? "IPv6" : "IPv4"
                     parts.append((" → \(target.address) (\(version))", false))
                 }
+                parts.append((" · " + PingCount.progress(sent: model.stats.sent, count: model.runCount), false))
                 parts.append((" · " + String(localized: "\(model.payloadSize) bytes"), false))
             }
             return AttributedString(segments: parts)

@@ -56,7 +56,7 @@ struct GraphSnapshotView: View {
             Text("\(result.graph.totalPaths) paths · \(result.collectors.count) collectors · RIPE RIS via RIPEstat")
                 .font(.footnote).foregroundStyle(.secondary)
             ZStack(alignment: .topLeading) {
-                GraphEdgesLayer(layout: layout, highlight: nil)
+                GraphEdgesLayer(layout: layout, highlight: nil, originName: BGPText.originName(result))
                 ForEach(nodes) { node in
                     if let frame = layout.frames[node.id] {
                         NodeView(node: node, name: node.id.asnValue.flatMap { BGPText.shortName(result.holder(of: $0)) })

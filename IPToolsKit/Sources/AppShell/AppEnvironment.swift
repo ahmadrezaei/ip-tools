@@ -22,7 +22,8 @@ import TraceFeature
         self.ping = PingModel(service: pingService, settings: settings, recents: recents, router: router)
         self.trace = TraceModel(service: traceService, asnLookup: ASNLookup(api: api), settings: settings,
                                 recents: recents, router: router)
-        self.bgp = BGPMapModel(api: api, recents: recents, router: router)
+        self.bgp = BGPMapModel(api: api, recents: recents, router: router, traceService: traceService,
+                               settings: settings, network: network)
     }
 
     /// Pinger, Tracer, RIPEstatClient.
@@ -31,23 +32,33 @@ import TraceFeature
                        pingService: Pinger(), traceService: Tracer(), api: RIPEstatClient())
     }
 
+    /// The 8.8.8.8 trace of DESIGN §6.11.6 (hop 10 silent). Other targets get the same script.
+    static func googleTraceScript() -> [[ProbeResult]] {
+        func hop(_ address: String, _ rtt: Double) -> [ProbeResult] {
+            let ip = IPAddress(address)!
+            return [.timeExceeded(from: ip, rtt: rtt), .timeExceeded(from: ip, rtt: rtt * 1.05), .timeExceeded(from: ip, rtt: rtt * 0.97)]
+        }
+        let google = IPAddress("8.8.8.8")!
+        return [
+            hop("192.168.70.1", 0.002), hop("172.16.21.1", 0.004), hop("10.99.7.1", 0.006),
+            hop("104.28.0.0", 0.008), hop("172.71.133.1", 0.010), hop("141.101.67.186", 0.012), hop("141.101.67.57", 0.013),
+            hop("108.170.255.223", 0.015), hop("72.14.237.93", 0.016),
+            [.timeout, .timeout, .timeout],
+            [.echoReply(from: google, rtt: 0.018), .echoReply(from: google, rtt: 0.017), .echoReply(from: google, rtt: 0.019)],
+        ]
+    }
+
     /// Mock services and an isolated UserDefaults suite (for previews).
     public static func preview() -> AppEnvironment {
         let defaults = UserDefaults(suiteName: "com.ahmadrezaei.iptools.preview") ?? .standard
         let cloudflare = IPAddress("1.1.1.1")!
-        let hop1 = IPAddress("192.168.1.1")!, hop2 = IPAddress("10.20.0.1")!, hop3 = IPAddress("141.101.65.1")!
         let ping = MockPingService(script: [
             .reply(rtt: 0.0123, bytes: 64, ttl: 58, from: cloudflare),
             .reply(rtt: 0.0141, bytes: 64, ttl: 58, from: cloudflare),
             .timeout,
             .reply(rtt: 0.0362, bytes: 64, ttl: 58, from: cloudflare),
         ])
-        let trace = MockTraceService(hops: [
-            [.timeExceeded(from: hop1, rtt: 0.002), .timeExceeded(from: hop1, rtt: 0.002), .timeExceeded(from: hop1, rtt: 0.003)],
-            [.timeExceeded(from: hop2, rtt: 0.009), .timeout, .timeExceeded(from: hop2, rtt: 0.010)],
-            [.timeExceeded(from: hop3, rtt: 0.021), .timeExceeded(from: hop3, rtt: 0.020), .timeExceeded(from: hop3, rtt: 0.022)],
-            [.echoReply(from: cloudflare, rtt: 0.024), .echoReply(from: cloudflare, rtt: 0.023), .echoReply(from: cloudflare, rtt: 0.025)],
-        ])
+        let trace = MockTraceService(hops: Self.googleTraceScript())
         return AppEnvironment(router: AppRouter(), recents: RecentsStore(defaults: defaults),
                               settings: SettingsStore(defaults: defaults), network: NetworkMonitor(),
                               pingService: ping, traceService: trace, api: MockRIPEstat(fixtureBundle: .main))

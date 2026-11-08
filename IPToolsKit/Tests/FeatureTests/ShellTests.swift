@@ -35,4 +35,20 @@ import SharedUI
         #expect(!AboutSections.versionString.isEmpty)
         #expect(AboutSections.repositoryURL.absoluteString == "https://github.com/ahmadrezaei/ip-tools")
     }
+
+    @Test func previewTraceScriptIsTheGoogleTrace() async {
+        let env = AppEnvironment.preview()
+        env.recents.clear()
+        env.settings.trace.lookUpASNs = false
+        env.settings.trace.resolveHostnames = false
+        env.trace.targetText = "8.8.8.8"
+        env.trace.start()
+        #expect(await waitUntil(timeout: .seconds(15)) { if case .finished = env.trace.phase { true } else { false } })
+        #expect(env.trace.hops.count == 11)
+        #expect(env.trace.hops[9].isSilent)
+        #expect(env.trace.hops[10].isDestination)
+        #expect(env.trace.snapshot()?.hops.count == 11)
+        env.bgp.stopForBackground()
+        env.recents.clear()
+    }
 }

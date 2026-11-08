@@ -128,4 +128,38 @@ import NetCore
         #expect(partial?.addressPreference == .ipv6)
         #expect(partial?.ping == PingOptions.default)
     }
+
+    @Test func routerCarriesTraceSnapshot() {
+        let router = AppRouter()
+        let ip = IPAddress("8.8.8.8")!
+        let target = ResolvedTarget(input: "8.8.8.8", address: ip, hostname: nil, allAddresses: [ip])
+        let snapshot = TraceSnapshot(
+            target: target,
+            hops: [TraceSnapshot.Hop(ttl: 1, address: ip, hostname: nil, asn: 15169, rtts: [0.01], reachedTarget: true)],
+            completion: .reachedDestination(hops: 1), finishedAt: Date(timeIntervalSince1970: 1_000))
+        router.open(.bgp, target: "8.8.8.8", autostart: true, trace: snapshot)
+        let request = router.takeRequest(for: .bgp)
+        #expect(request?.trace == snapshot)
+        #expect(request?.target == "8.8.8.8")
+        router.open(.bgp, target: "8.8.8.8", autostart: true)
+        #expect(router.takeRequest(for: .bgp)?.trace == nil)
+    }
+
+    @Test func pathGenerationBumpsOnlyOnRealChange() {
+        let monitor = NetworkMonitor()
+        let base = monitor.pathGeneration
+        // Settle: let the system's first path update arrive, then take baseline.
+        let wifi = NetworkMonitor.PathSignature(isSatisfied: true, interfaceTypes: ["wifi"], gateways: ["192.168.1.1"])
+        monitor.apply(wifi)
+        let afterBaseline = monitor.pathGeneration
+        monitor.apply(wifi)
+        #expect(monitor.pathGeneration == afterBaseline)
+        monitor.apply(NetworkMonitor.PathSignature(isSatisfied: true, interfaceTypes: ["cellular"], gateways: []))
+        #expect(monitor.pathGeneration == afterBaseline + 1)
+        monitor.apply(NetworkMonitor.PathSignature(isSatisfied: false, interfaceTypes: [], gateways: []))
+        #expect(monitor.pathGeneration == afterBaseline + 2)
+        monitor.apply(NetworkMonitor.PathSignature(isSatisfied: true, interfaceTypes: ["cellular"], gateways: ["10.0.0.1"]))
+        #expect(monitor.pathGeneration == afterBaseline + 3)
+        #expect(base >= 0)
+    }
 }

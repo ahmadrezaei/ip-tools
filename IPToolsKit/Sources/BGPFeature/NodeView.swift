@@ -10,6 +10,7 @@ struct NodeView: View {
     let name: String?
     var isSelected = false
     var isDimmed = false
+    var isYou = false
 
     private var isOrigin: Bool { node.isOrigin }
 
@@ -23,6 +24,17 @@ struct NodeView: View {
                 Circle().fill(.green).frame(width: 7, height: 7)
                     .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topTrailing)
                     .padding(5)
+            }
+        }
+        .overlay { if isYou { shape.strokeBorder(Color.green, lineWidth: 2) } }
+        .overlay(alignment: .topLeading) {
+            if isYou {
+                Text("YOU")
+                    .font(.caption2.weight(.bold))
+                    .foregroundStyle(.white)
+                    .padding(.horizontal, 5).padding(.vertical, 1)
+                    .background(Capsule().fill(Color.green))
+                    .offset(x: -4, y: -7)
             }
         }
         .opacity(isDimmed ? 0.35 : 1)

@@ -103,8 +103,14 @@ public enum GraphBuilder {
             let ordered = l == 0
                 ? all.sorted { pathCount[$0]! != pathCount[$1]! ? pathCount[$0]! > pathCount[$1]! : $0 < $1 }
                 : all
-            let keep = l == 0 ? ordered : Array(ordered.prefix(k))
-            let rest = l == 0 ? [] : Array(ordered.dropFirst(k))
+            // Pinned ASes (DESIGN 6.12 item 4) that fall beyond the top K are kept as extra nodes after the top K
+            // and before the bucket. They never take a top-K slot and are never folded.
+            var keep = l == 0 ? ordered : Array(ordered.prefix(k))
+            var rest = l == 0 ? [] : Array(ordered.dropFirst(k))
+            if !options.pinned.isEmpty, !rest.isEmpty {
+                keep += rest.filter { options.pinned.contains($0) }
+                rest = rest.filter { !options.pinned.contains($0) }
+            }
             for asn in keep {
                 nodeOf[asn] = .asn(asn)
                 nodes.append(GraphNode(id: .asn(asn), layer: l, pathCount: pathCount[asn]!,

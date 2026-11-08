@@ -32,7 +32,7 @@ struct BGPListView: View {
     }
 
     private func originSection(result: BGPResult, stats: BGPStats) -> some View {
-        Section("Origin") {
+        Section("Destination") {
             ForEach(result.originASNs, id: \.self) { asn in row(asn, result: result, stats: stats) }
         }
     }
@@ -52,7 +52,7 @@ struct BGPListView: View {
                     Button("Show all \(members.count)") { expandedLayers.insert(layer) }
                 }
             } header: {
-                Text("\(BGPText.hops(layer)) · \(members.count) ASes")
+                Text(BGPText.sectionTitle(layer: layer, originName: BGPText.originName(result), count: members.count))
             }
         }
     }
@@ -66,6 +66,11 @@ struct BGPListView: View {
             VStack(alignment: .leading, spacing: 4) {
                 HStack(alignment: .firstTextBaseline) {
                     Text(verbatim: "AS\(asn)").font(.body.weight(.semibold)).monospacedDigit()
+                    if asn == model.myASN {
+                        Text("You").font(.caption2.weight(.bold)).foregroundStyle(.white)
+                            .padding(.horizontal, 6).padding(.vertical, 1)
+                            .background(Capsule().fill(Color.green))
+                    }
                     Text(BGPText.shortName(result.holder(of: asn)) ?? "")
                         .font(.subheadline).foregroundStyle(.secondary).lineLimit(1)
                     Spacer(minLength: 8)
@@ -80,7 +85,8 @@ struct BGPListView: View {
         }
         .buttonStyle(.plain)
         .accessibilityElement(children: .ignore)
-        .accessibilityLabel(BGPText.accessibilityLabel(for: summary, names: result.names))
+        .accessibilityLabel((asn == model.myASN ? String(localized: "Your network, ") : "")
+                            + BGPText.accessibilityLabel(for: summary, names: result.names))
         .accessibilityAddTraits(.isButton)
     }
 

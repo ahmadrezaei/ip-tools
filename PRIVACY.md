@@ -6,9 +6,9 @@ IP Tools does not collect, store on a server, or share any personal data. The Ap
 
 The app talks to exactly three kinds of destinations:
 
-1. **The target you probe.** Ping and traceroute send ICMP packets only to the host or IP address you enter.
+1. **The target you probe.** Ping, traceroute and BGP Map's *Your route* send ICMP packets only to the host, address or prefix you enter.
 2. **The system DNS resolver**, to turn host names into addresses.
-3. **`https://stat.ripe.net/data/...` (RIPEstat, run by the RIPE NCC).** This is the only place data goes besides the target you probe and your DNS resolver. The host names, IP addresses, prefixes or AS numbers you enter in BGP Map are sent to RIPEstat. If "Look up networks (ASN, via RIPEstat)" is on, the public IP addresses of traceroute hops are sent as well. These requests carry `sourceapp=ahmadrezaei-iptools`, as RIPE NCC asks, and no user identifiers. The setting can be turned off, and the Traceroute settings and the About screen say this in plain words.
+3. **`https://stat.ripe.net/data/...` (RIPEstat, run by the RIPE NCC).** This is the only place data goes besides the target you probe and your DNS resolver. The host names, IP addresses, prefixes or AS numbers you enter in BGP Map are sent to RIPEstat. If "Look up networks (ASN, via RIPEstat)" is on, the public IP addresses of traceroute hops are sent as well. These requests carry `sourceapp=ahmadrezaei-iptools`, as RIPE NCC asks, and no user identifiers. When BGP Map shows *Your route*, the app asks RIPEstat which public IP address your connection uses and which network it belongs to, and looks up the public addresses of the routers on the way (if "Look up networks" is on). RIPEstat already sees that address on every request. The app keeps it in memory only and never sends it anywhere else. The setting can be turned off, and the Traceroute settings and the About screen say this in plain words.
 
 Nothing else leaves the device. There is no analytics and no tracking.
 

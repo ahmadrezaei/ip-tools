@@ -140,6 +140,12 @@ public struct MockRIPEstat: RIPEstatAPI {
         return LookingGlass(collectors: Self.collectors, routes: routes, latestTime: now)
     }
 
+    public func whatsMyIP() async throws -> WhatsMyIP {
+        try await pause()
+        if let data = fixtureData("whats-my-ip") { return try RIPEstatParsing.whatsMyIP(data) }
+        return WhatsMyIP(ip: "91.107.240.242")
+    }
+
     public func asOverview(_ asn: UInt32) async throws -> ASOverview {
         try await pause()
         if let data = fixtureData("as-overview_AS\(asn)") { return try RIPEstatParsing.asOverview(data, asn: asn) }

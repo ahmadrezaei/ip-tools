@@ -20,6 +20,8 @@ import SharedUI
     public internal(set) var error: ToolError?
     /// Payload size used by the current/last run (after IPv6 clamping).
     public internal(set) var payloadSize: Int = PingOptions.default.payloadSize
+    /// Count captured at Start (`nil` = until stopped). A changed setting applies to the next Start.
+    public internal(set) var runCount: Int?
     /// The text the current/last run was started with.
     public internal(set) var runTarget: String = ""
 
@@ -63,6 +65,7 @@ import SharedUI
         let gen = generation
         let preference = settings.addressPreference
         let baseOptions = settings.ping
+        runCount = baseOptions.count
         let resolve = self.resolve
         task = Task { [weak self] in
             do {

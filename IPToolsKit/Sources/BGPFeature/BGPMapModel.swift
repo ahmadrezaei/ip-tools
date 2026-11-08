@@ -18,9 +18,8 @@ import SharedUI
     }
     public var selection: NodeID? { didSet { updateHighlight() } }
     public var displayMode: DisplayMode = .graph
-    /// Stub default is `.allRoutes`; the BGP work flips it to `.yourRoute`.
-    public var view: BGPView = .allRoutes
-    public let route = YourRouteModel()
+    public var view: BGPView = .yourRoute
+    public let route: YourRouteModel
     public private(set) var summary: RoutesSummary?
     public internal(set) var phase: Phase = .idle
     public private(set) var result: BGPResult?
@@ -29,6 +28,14 @@ import SharedUI
     public internal(set) var failure: BGPFailure?
     /// "cloudflare.com → 104.16.132.229" when the input was a hostname.
     public private(set) var hostLine: String?
+    /// Your network, once whats-my-ip and network-info have answered.
+    public internal(set) var myNetwork: MyNetwork?
+    var myASN: UInt32? { myNetwork?.asn }
+
+    /// Holder of an AS: from the graph's names, else from the names Your route fetched.
+    func holder(of asn: UInt32) -> String? {
+        result?.holder(of: asn) ?? route.names[asn].flatMap { $0.isEmpty ? nil : $0 }
+    }
 
     private(set) var stats: BGPStats?
     private(set) var highlight: BGPHighlight?
@@ -48,6 +55,13 @@ import SharedUI
     @ObservationIgnored private var rebuildTask: Task<Void, Never>?
     @ObservationIgnored private var runID = 0
     @ObservationIgnored private var pendingSelection: NodeID?
+    @ObservationIgnored private let locator: MyNetworkLocator
+    @ObservationIgnored private let network: NetworkMonitor?
+    @ObservationIgnored private var locateTask: Task<MyNetwork?, Never>?
+    @ObservationIgnored private var lateTask: Task<Void, Never>?
+    @ObservationIgnored private var pendingSnapshot: TraceSnapshot?
+    @ObservationIgnored private var routeSnapshot: TraceSnapshot?
+    @ObservationIgnored private var routeInput: RouteInput?
     @ObservationIgnored private var prefixCache: [UInt32: (holder: String?, prefixes: [String])] = [:]
 
     public init(api: any RIPEstatAPI, recents: RecentsStore, router: AppRouter,
@@ -56,10 +70,23 @@ import SharedUI
         self.api = api
         self.recents = recents
         self.router = router
+        self.network = network
+        self.locator = MyNetworkLocator(api: api)
+        self.route = YourRouteModel()
+        route.configure(api: api, service: traceService, settings: settings)
     }
 
     /// Stops a running measurement.
-    public func stopForBackground() {}
+    public func stopForBackground() {
+        route.stop(reason: String(localized: "app moved to background"))
+    }
+
+    /// What the typed input says about the probe target.
+    struct RouteInput {
+        var label: String
+        var address: IPAddress?
+        var hostname: String?
+    }
 
     // MARK: - Input
 
@@ -110,12 +137,14 @@ import SharedUI
 
     public func map() {
         let text = targetText.trimmingCharacters(in: .whitespacesAndNewlines)
+        let snapshot = pendingSnapshot
+        pendingSnapshot = nil
         guard let parsed = Self.classify(text) else {
             reset()
             fail(BGPFailure(kind: .invalid, message: String(localized: "Enter an IP address, prefix, AS number or hostname.")))
             return
         }
-        start(parsed, text: text)
+        start(parsed, text: text, snapshot: snapshot)
     }
 
     public func choosePrefix(_ prefix: String) {
@@ -129,6 +158,9 @@ import SharedUI
         runTask?.cancel()
         namesTask?.cancel()
         runTask = nil
+        locateTask?.cancel()
+        lateTask?.cancel()
+        route.reset()
         if case .loading = phase { phase = .idle }
     }
 
@@ -156,6 +188,7 @@ import SharedUI
     public func consumeRouterRequest() {
         guard let request = router.takeRequest(for: .bgp) else { return }
         targetText = request.target
+        pendingSnapshot = request.trace
         if request.autostart { map() }
     }
 
@@ -170,7 +203,10 @@ import SharedUI
         if needed > maxNodesPerLayer { maxNodesPerLayer = needed } else { rebuild() }
     }
 
-    public var exportText: String { BGPExport.text(result: result) }
+    /// Text of the visible view: the route in Your route, the paths in All routes.
+    public var exportText: String {
+        view == .yourRoute ? route.exportText : BGPExport.text(result: result)
+    }
 
     // MARK: - Run
 
@@ -187,6 +223,12 @@ import SharedUI
         failure = nil
         hostLine = nil
         rawPaths = []
+        locateTask?.cancel()
+        lateTask?.cancel()
+        route.reset()
+        summary = nil
+        myNetwork = nil
+        routeInput = nil
     }
 
     private func fail(_ failure: BGPFailure) {
@@ -194,13 +236,15 @@ import SharedUI
         phase = .failed(failure.message)
     }
 
-    private func start(_ parsed: Parsed, text: String, record: Bool = true) {
+    private func start(_ parsed: Parsed, text: String, record: Bool = true, snapshot: TraceSnapshot? = nil) {
         reset()
         if let rejection = Self.rejection(for: parsed, text: text) {
             fail(rejection)
             return
         }
         let id = runID
+        routeSnapshot = snapshot
+        if case .asn = parsed {} else { startLocating() }
         phase = .loading(String(localized: "Fetching routes from RIPEstat…"))
         runTask = Task { [weak self] in await self?.run(parsed, text: text, id: id, record: record) }
     }
@@ -211,8 +255,10 @@ import SharedUI
             case let .asn(asn):
                 try await loadASN(asn, text: text, id: id, record: record)
             case let .ip(ip):
+                routeInput = RouteInput(label: text, address: ip, hostname: nil)
                 try await loadAddress(ip, text: text, id: id, record: record)
             case let .prefix(ip, length):
+                routeInput = RouteInput(label: text, address: nil, hostname: nil)
                 try await loadPrefix("\(ip)/\(length)", text: text, id: id, record: record)
             case let .hostname(host):
                 phase = .loading(String(localized: "Resolving \(host)…"))
@@ -223,6 +269,7 @@ import SharedUI
                     return
                 }
                 hostLine = "\(host) → \(resolved.address)"
+                routeInput = RouteInput(label: host, address: resolved.address, hostname: host)
                 phase = .loading(String(localized: "Fetching routes from RIPEstat…"))
                 try await loadAddress(resolved.address, text: text, id: id, record: record)
             }
@@ -283,7 +330,10 @@ import SharedUI
             return
         }
         let k = maxNodesPerLayer
-        let (graph, layout) = await Self.compute(paths: paths, k: k)
+        let located = await awaitLocate(timeout: .milliseconds(1500))
+        guard id == runID else { return }
+        if located.done { myNetwork = located.network }
+        let (graph, layout) = await Self.compute(paths: paths, k: k, pinned: pinned(located.network?.asn))
         guard id == runID else { return }
         var names: [UInt32: String] = [:]
         for origin in origins where !origin.holder.isEmpty { names[origin.asn] = origin.holder }
@@ -292,7 +342,9 @@ import SharedUI
                                visibility: visibility, latestTime: glass.latestTime, names: names)
         rawPaths = paths
         install(result: result, layout: layout)
+        updateSummary()
         phase = .loaded
+        startRoute(result: result, locateDone: located.done, collectors: glass.collectors)
         if record { recents.record(text, tool: .bgp) }
         fetchMissingNames(id: id)
     }
@@ -337,9 +389,11 @@ import SharedUI
 
     // MARK: - Graph
 
-    nonisolated private static func compute(paths: [ObservedPath], k: Int) async -> (ASGraph, GraphLayout) {
+    private func pinned(_ asn: UInt32?) -> Set<UInt32> { asn.map { [$0] } ?? [] }
+
+    nonisolated private static func compute(paths: [ObservedPath], k: Int, pinned: Set<UInt32> = []) async -> (ASGraph, GraphLayout) {
         await Task.detached(priority: .userInitiated) {
-            let graph = GraphBuilder.build(from: paths, options: GraphBuildOptions(maxNodesPerLayer: k))
+            let graph = GraphBuilder.build(from: paths, options: GraphBuildOptions(maxNodesPerLayer: k, pinned: pinned))
             return (graph, LayeredLayout.layout(graph))
         }.value
     }
@@ -355,13 +409,14 @@ import SharedUI
     private func rebuild() {
         guard result != nil, !rawPaths.isEmpty else { return }
         rebuildTask?.cancel()
-        let paths = rawPaths, k = maxNodesPerLayer, id = runID
+        let paths = rawPaths, k = maxNodesPerLayer, id = runID, pins = pinned(myASN)
         rebuildTask = Task { [weak self] in
-            let (graph, layout) = await Self.compute(paths: paths, k: k)
+            let (graph, layout) = await Self.compute(paths: paths, k: k, pinned: pins)
             guard let self, !Task.isCancelled, id == self.runID, let current = self.result else { return }
             let updated = BGPResult(prefix: current.prefix, origins: current.origins, graph: graph, collectors: current.collectors,
                                     visibility: current.visibility, latestTime: current.latestTime, names: current.names)
             self.install(result: updated, layout: layout)
+            self.updateSummary()
             if let pending = self.pendingSelection {
                 self.pendingSelection = nil
                 self.selection = pending
@@ -400,6 +455,7 @@ import SharedUI
     private func fetchMissingNames(id: Int) {
         guard let result else { return }
         var wanted = Set(result.originASNs)
+        if let myASN { wanted.insert(myASN) }
         for node in result.graph.nodes {
             if case let .asn(asn) = node.id { wanted.insert(asn) }
             wanted.formUnion(node.collapsed)
@@ -412,6 +468,64 @@ import SharedUI
             guard let names = try? await api.asNames(missing), !Task.isCancelled else { return }
             guard let self, id == self.runID else { return }
             self.result?.names.merge(names) { _, new in new }
+            self.route.ingestNames(self.result?.names ?? names)
+        }
+    }
+
+    // MARK: - Your route
+
+    private func startLocating() {
+        route.beginLocating()
+        let locator = locator
+        let generation = network?.pathGeneration ?? 0
+        locateTask = Task { await locator.current(generation: generation) }
+    }
+
+    private func awaitLocate(timeout: Duration) async -> (done: Bool, network: MyNetwork?) {
+        guard let task = locateTask else { return (true, nil) }
+        return await withTaskGroup(of: (Bool, MyNetwork?).self) { group in
+            group.addTask { (true, await task.value) }
+            group.addTask {
+                try? await Task.sleep(for: timeout)
+                return (false, nil)
+            }
+            let first = await group.next() ?? (false, nil)
+            group.cancelAll()
+            return first
+        }
+    }
+
+    func updateSummary() {
+        guard let result else { summary = nil; return }
+        summary = RoutesSummary(graph: result.graph, collectorCount: result.collectors.count, myASN: myASN)
+    }
+
+    private func routeContext(_ result: BGPResult, collectors: [LookingGlass.Collector]) -> RouteContext {
+        let input = routeInput
+        var locations: [String: String] = [:]
+        for collector in collectors { locations[collector.id] = collector.location }
+        return RouteContext(label: input?.label ?? result.prefix, address: input?.address, hostname: input?.hostname,
+                            prefix: result.prefix, origins: result.originASNs, paths: result.graph.cleanedPaths,
+                            collectorLocations: locations, snapshot: routeSnapshot)
+    }
+
+    private func startRoute(result: BGPResult, locateDone: Bool, collectors: [LookingGlass.Collector]) {
+        let context = routeContext(result, collectors: collectors)
+        route.ingestNames(result.names)
+        if locateDone {
+            route.begin(context, myNetwork: myNetwork)
+            return
+        }
+        // whats-my-ip is slow: show the graph now and finish the route (and the pinned node) when it answers.
+        guard let task = locateTask else { return }
+        let id = runID
+        lateTask = Task { [weak self] in
+            let found = await task.value
+            guard let self, !Task.isCancelled, id == self.runID else { return }
+            self.myNetwork = found
+            if found?.asn != nil { self.rebuild() }
+            self.updateSummary()
+            self.route.begin(context, myNetwork: found)
         }
     }
 }
