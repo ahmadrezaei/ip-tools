@@ -161,6 +161,67 @@ import Testing
         #expect(api.calls("my-ip:").count == count * 3)
     }
 
+    @Test func networkChangesRightAfterACheckWaitInsteadOfLooping() async {
+        let api = api()
+        let box = NetworkBox()
+        let model = makeWhoisModel(api: api, network: box)
+        model.networkRecheckInterval = 0.6
+        model.appeared()
+        #expect(await settled(model))
+        let count = api.calls("my-ip:").count
+
+        // A burst of path changes just after a check: nothing starts yet, then exactly one new check.
+        box.state.generation = 1
+        model.pathGenerationChanged()
+        model.pathGenerationChanged()
+        try? await Task.sleep(for: .milliseconds(150))
+        #expect(api.calls("my-ip:").count == count)
+        #expect(await waitUntil { api.calls("my-ip:").count == count * 2 })
+        #expect(await settled(model))
+        try? await Task.sleep(for: .milliseconds(300))
+        #expect(api.calls("my-ip:").count == count * 2)
+    }
+
+    @Test func goingOfflineDoesNotDelayTheCheckAfterReconnecting() async {
+        let api = api()
+        let box = NetworkBox()
+        let model = makeWhoisModel(api: api, network: box)
+        final class Clock { var date = Date(timeIntervalSince1970: 1_000_000) }
+        let clock = Clock()
+        model.now = { clock.date }
+        model.networkRecheckInterval = 30
+        model.appeared()
+        #expect(await settled(model))
+        let count = api.calls("my-ip:").count
+        clock.date += 60
+
+        box.state.online = false
+        box.state.generation = 1
+        model.pathGenerationChanged()
+        #expect(await waitUntil { model.myIP?.v4 == .unavailable(.offline) })
+
+        // The offline snapshot sent nothing, so it must not hold back the check once the network is back.
+        box.state.online = true
+        box.state.generation = 2
+        model.pathGenerationChanged()
+        #expect(await waitUntil(timeout: .seconds(2)) { api.calls("my-ip:").count == count * 2 })
+    }
+
+    @Test func refreshKeepsTheWhoisWhileCheckingAnUnchangedAddress() async {
+        let api = api()
+        let model = makeWhoisModel(api: api)
+        model.appeared()
+        #expect(await settled(model))
+        let count = api.calls("my-ip:").count
+        let whoisCalls = api.calls("whois:")
+
+        model.refreshMyIP()
+        #expect(await waitUntil { api.calls("my-ip:").count == count * 2 })
+        #expect(await settled(model))
+        #expect(isLoaded(model, .v4))
+        #expect(api.calls("whois:") == whoisCalls)
+    }
+
     @Test func defaultFamilyResetsOnANewNetwork() async {
         let api = api()
         let box = NetworkBox()

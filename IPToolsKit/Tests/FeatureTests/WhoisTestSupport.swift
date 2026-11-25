@@ -183,6 +183,7 @@ extension WhoisRules {
     model.rules = .stub
     model.seams = .stub
     model.networkDebounce = .milliseconds(20)
+    model.networkRecheckInterval = 0
     model.networkState = { network.state }
     return model
 }

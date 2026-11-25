@@ -2,12 +2,14 @@
 // Copyright (c) 2026 Ahmad Rezaei
 
 import Foundation
+import NetCore
 import Network
 import Observation
 
 @MainActor @Observable public final class NetworkMonitor {
     public private(set) var isOnline: Bool = true
-    /// +1 on every satisfied path update (so Wi-Fi to Wi-Fi switches count) and whenever the status or interfaces change.
+    /// +1 whenever the status, interfaces, gateways or local IPv4 addresses change. Repeated updates for the same
+    /// network do not count: iOS sends them often, and the app's own requests can cause them.
     public private(set) var pathGeneration: Int = 0
     /// `NWPath.supportsIPv4` of the latest path.
     public private(set) var supportsIPv4: Bool = true
@@ -17,24 +19,32 @@ import Observation
     public private(set) var usesVPN: Bool = false
     @ObservationIgnored private let monitor = NWPathMonitor()
     @ObservationIgnored private var lastSignature: PathSignature?
-    @ObservationIgnored private var lastUpdate: Date?
 
-    /// What counts as "the network changed": status, interface types and gateways.
+    /// What counts as "the network changed": status, interface types, gateways and the local IPv4 addresses of
+    /// the Wi-Fi, cellular and wired interfaces the path uses (so two Wi-Fi networks behind the same gateway address still differ).
+    /// IPv6 addresses are left out because temporary addresses rotate on the same network.
     struct PathSignature: Hashable, Sendable {
         var isSatisfied: Bool
         var interfaceTypes: [String]
         var gateways: [String]
+        var addresses: [String]
 
-        init(isSatisfied: Bool, interfaceTypes: [String], gateways: [String]) {
+        init(isSatisfied: Bool, interfaceTypes: [String], gateways: [String], addresses: [String] = []) {
             self.isSatisfied = isSatisfied
             self.interfaceTypes = interfaceTypes.sorted()
             self.gateways = gateways.sorted()
+            self.addresses = addresses.sorted()
         }
 
-        init(_ path: NWPath) {
+        init(_ path: NWPath, local: [LocalAddress]) {
+            let physical: Set<LocalAddress.Interface> = [.wifi, .cellular, .wired]
+            let inUse = Set(path.availableInterfaces.map(\.name))
             self.init(isSatisfied: path.status == .satisfied,
                       interfaceTypes: path.availableInterfaces.map { "\($0.type)" },
-                      gateways: path.gateways.map { "\($0)" })
+                      gateways: path.gateways.map { "\($0)" },
+                      addresses: local.filter {
+                          physical.contains($0.interface) && inUse.contains($0.name) && $0.address.family == .v4
+                      }.map { "\($0.name)|\($0.address)" })
         }
     }
 
@@ -42,7 +52,7 @@ import Observation
     public init() {
         monitor.pathUpdateHandler = { [weak self] path in
             let online = path.status == .satisfied
-            let signature = PathSignature(path)
+            let signature = PathSignature(path, local: LocalInterfaces.current())
             let v4 = path.supportsIPv4, v6 = path.supportsIPv6
             let vpn = online && path.usesInterfaceType(.other)
             Task { @MainActor in
@@ -56,16 +66,11 @@ import Observation
         monitor.start(queue: DispatchQueue(label: "com.ahmadrezaei.iptools.network-monitor"))
     }
 
-    /// The first update is the baseline. Later, every satisfied update bumps `pathGeneration`, and so does any
-    /// signature change; identical consecutive updates within one second are treated as duplicates.
-    func apply(_ signature: PathSignature, now: Date = Date()) {
+    /// The first update is the baseline. Later, only a changed signature bumps `pathGeneration`.
+    func apply(_ signature: PathSignature) {
         let previous = lastSignature
-        let previousTime = lastUpdate
         lastSignature = signature
-        lastUpdate = now
-        guard let previous else { return }
-        let duplicate = previous == signature && previousTime.map { now.timeIntervalSince($0) < 1 } == true
-        guard !duplicate, signature.isSatisfied || previous != signature else { return }
+        guard let previous, previous != signature else { return }
         pathGeneration += 1
     }
 

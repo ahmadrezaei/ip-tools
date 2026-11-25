@@ -80,6 +80,8 @@ struct WhoisNetworkState {
     @ObservationIgnored var seams = WhoisSeams.live
     @ObservationIgnored var now: () -> Date = { Date() }
     @ObservationIgnored var networkDebounce: Duration = .seconds(2)
+    /// A network change starts a new check at most this often, however many path updates arrive.
+    @ObservationIgnored var networkRecheckInterval: TimeInterval = 10
     @ObservationIgnored var networkState: () -> WhoisNetworkState = { WhoisNetworkState() }
 
     /// What was on screen when the running lookup started, so Stop can put it back.
@@ -96,6 +98,7 @@ struct WhoisNetworkState {
     @ObservationIgnored private var myIPRun = 0
     @ObservationIgnored private var myIPTaskGeneration = 0
     @ObservationIgnored private var debounceTask: Task<Void, Never>?
+    @ObservationIgnored private var lastMyIPStart: Date?
     @ObservationIgnored private var myWhoisTasks: [IPVersion: Task<Void, Never>] = [:]
     @ObservationIgnored private var myWhoisAddress: [IPVersion: IPAddress] = [:]
     @ObservationIgnored private var myWhoisRun: [IPVersion: Int] = [:]
@@ -417,7 +420,11 @@ struct WhoisNetworkState {
     func pathGenerationChanged() {
         guard visible else { return }
         debounceTask?.cancel()
-        let delay = networkDebounce
+        var delay = networkDebounce
+        if let lastMyIPStart {
+            let wait = min(networkRecheckInterval, networkRecheckInterval - now().timeIntervalSince(lastMyIPStart))
+            if wait > 0 { delay = max(delay, .milliseconds(Int(wait * 1000))) }
+        }
         debounceTask = Task { [weak self] in
             try? await Task.sleep(for: delay)
             guard !Task.isCancelled else { return }
@@ -459,6 +466,7 @@ struct WhoisNetworkState {
                                    generation: state.generation, fetchedAt: now()))
             return
         }
+        lastMyIPStart = now()
         let viaVPN = state.usesVPN || localAddresses.contains { $0.interface == .vpn }
         let locator = locator
         myIPTask = Task { [weak self] in
@@ -486,7 +494,9 @@ struct WhoisNetworkState {
             myFamily = target
             adjustingFamily = false
         }
-        for version in IPVersion.allCases where myWhoisAddress[version] != snapshot.address(version) {
+        // A family that is still being checked keeps its whois: only a settled, different answer replaces it.
+        for version in IPVersion.allCases
+        where snapshot.slot(version) != .checking && myWhoisAddress[version] != snapshot.address(version) {
             myWhoisTasks[version]?.cancel()
             myWhoisTasks[version] = nil
             myWhois[version] = nil
