@@ -56,16 +56,32 @@ public final class RIPEstatClient: RIPEstatAPI, Sendable {
     private let cache = ResponseCache()
     private let names = NameCache()
     private let health = EndpointHealth()
+    private let pinnedGet: PinnedTransport
+
+    typealias PinnedTransport = @Sendable (_ host: String, _ path: String, _ headers: [String: String],
+                                           _ version: IPVersion, _ timeout: TimeInterval) async throws
+        -> (status: Int, body: Data)
 
     static let userAgent = "IPTools/1.0 (iOS; github.com/ahmadrezaei/ip-tools)"
     static let requestTimeout: TimeInterval = 30
     static let whatsMyIPTimeout: TimeInterval = 10
+    static let pinnedWhatsMyIPTimeout: TimeInterval = 8
     static let namesChunkSize = 200
 
-    public init(session: URLSession = .shared,
-                baseURL: URL = URL(string: "https://stat.ripe.net/data/")!,
-                sourceApp: String = "ahmadrezaei-iptools",
-                maxConcurrent: Int = 4) {
+    public convenience init(session: URLSession = .shared,
+                            baseURL: URL = URL(string: "https://stat.ripe.net/data/")!,
+                            sourceApp: String = "ahmadrezaei-iptools",
+                            maxConcurrent: Int = 4) {
+        self.init(session: session, baseURL: baseURL, sourceApp: sourceApp, maxConcurrent: maxConcurrent,
+                  pinnedGet: { host, path, headers, version, timeout in
+                      try await PinnedHTTPGet.get(host: host, path: path, headers: headers, version: version,
+                                                  timeout: timeout)
+                  })
+    }
+
+    /// Designated initialiser; tests inject the pinned-family transport.
+    init(session: URLSession, baseURL: URL, sourceApp: String, maxConcurrent: Int, pinnedGet: @escaping PinnedTransport) {
+        self.pinnedGet = pinnedGet
         self.session = session
         self.baseURL = baseURL
         self.sourceApp = sourceApp
@@ -74,16 +90,47 @@ public final class RIPEstatClient: RIPEstatAPI, Sendable {
 
     // MARK: RIPEstatAPI
 
-    // Step 0 stubs for the whois calls (DESIGN §14.15.3); replaced by the data layer.
-    public func whatsMyIP(over version: IPVersion) async throws -> WhatsMyIP { throw PublicIPError.noRoute(version) }
+    public func whatsMyIP(over version: IPVersion) async throws -> WhatsMyIP {
+        let url = url(call: "whats-my-ip", resource: nil)
+        let path = url.path + (url.query.map { "?\($0)" } ?? "")
+        try await gate.acquire()
+        let reply: (status: Int, body: Data)
+        do {
+            reply = try await pinnedGet(url.host ?? "stat.ripe.net", path,
+                                        ["User-Agent": Self.userAgent, "Accept": "application/json"], version,
+                                        Self.pinnedWhatsMyIPTimeout)
+            await gate.release()
+        } catch {
+            await gate.release()
+            throw error
+        }
+        return try Self.interpretPinned(status: reply.status, body: reply.body)
+    }
+
+    /// 2xx: the envelope. 429: busy (shared copy). Anything else (an nginx 502 page, say) is a bad response.
+    static func interpretPinned(status: Int, body: Data) throws -> WhatsMyIP {
+        switch status {
+        case 200..<300: return try RIPEstatParsing.whatsMyIP(body)
+        case 429: throw RIPEstatError.rateLimited
+        default: throw PublicIPError.badResponse(status: status)
+        }
+    }
+
     public func whois(_ resource: String) async throws -> WhoisResponse {
-        throw RIPEstatError.api(messages: ["whois not implemented"])
+        try WhoisParsing.whois(try await fetch("whois", resource: resource), resource: resource)
     }
+
     public func abuseContacts(_ resource: String) async throws -> AbuseContacts {
-        throw RIPEstatError.api(messages: ["abuse-contact-finder not implemented"])
+        try WhoisParsing.abuse(try await fetch("abuse-contact-finder", resource: resource))
     }
-    public func registeredCountry(_ resource: String) async throws -> String? { nil }
-    public func geolocation(_ ip: String) async throws -> GeoLocation? { nil }
+
+    public func registeredCountry(_ resource: String) async throws -> String? {
+        try WhoisParsing.country(try await fetch("rir-stats-country", resource: resource))
+    }
+
+    public func geolocation(_ ip: String) async throws -> GeoLocation? {
+        try WhoisParsing.geolocation(try await fetch("maxmind-geo-lite", resource: ip))
+    }
 
     public func networkInfo(_ ip: String) async throws -> NetworkInfo {
         try RIPEstatParsing.networkInfo(try await fetch("network-info", resource: ip))
