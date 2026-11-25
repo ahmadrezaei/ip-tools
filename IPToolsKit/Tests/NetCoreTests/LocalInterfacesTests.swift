@@ -15,7 +15,7 @@ import Testing
             ("pdp_ip3", false, .cellular),
             ("utun3", true, .vpn),
             ("utun3", false, .other),
-            ("ipsec0", true, .vpn),
+            ("ipsec0", true, .other),
             ("ipsec0", false, .other),
             ("awdl0", true, .other),
             ("bridge100", true, .other),
@@ -49,11 +49,11 @@ import Testing
             entry("utun0", "fe80::1"),
             entry("utun1", "fe80::2"),
             entry("utun4", "10.8.0.2"),
-            entry("ipsec0", "169.254.1.1"),
+            entry("ipsec0", "10.20.0.2"),
         ])
-        // ipsec0 only has a link-local IPv4 address (dropped), so only utun4 remains, as a VPN.
-        #expect(result.map(\.name) == ["utun4"])
-        #expect(result.first?.interface == .vpn)
+        // ipsec0 (iOS Wi-Fi Calling / IMS tunnels) is never treated as a VPN.
+        #expect(result.map(\.name) == ["utun4", "ipsec0"])
+        #expect(result.map(\.interface) == [.vpn, .other])
     }
 
     @Test func sortOrder() {

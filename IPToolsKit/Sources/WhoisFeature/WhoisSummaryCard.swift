@@ -10,6 +10,7 @@ import SwiftUI
 /// The normalised summary of a network or AS (DESIGN §14.3.3). Missing values are left out; only Abuse says so.
 struct WhoisSummaryCard: View {
     let result: WhoisResult
+    @ScaledMetric(relativeTo: .title3) private var titleSize: CGFloat = 20
     /// Result mode shows the reverse name of an address here; My IP shows it in the address row.
     var showsReverseName = false
     var onLookUp: (String) -> Void = { _ in }
@@ -51,7 +52,7 @@ struct WhoisSummaryCard: View {
 
     private var header: some View {
         VStack(alignment: .leading, spacing: 2) {
-            Text(title).font(.system(size: 20, weight: .bold, design: .monospaced)).textSelection(.enabled)
+            Text(title).font(.system(size: titleSize, weight: .bold, design: .monospaced)).textSelection(.enabled)
             if let subtitle { Text(subtitle).font(.subheadline).foregroundStyle(.secondary) }
         }
         .padding(.horizontal, 14)
@@ -256,10 +257,17 @@ struct WhoisSummaryCard: View {
         }
     }
 
+    /// Registry dates are calendar dates parsed as midnight UTC, so they are shown in UTC, never in the device zone.
+    static func registryDateText(_ date: Date, locale: Locale = .current,
+                                 calendar: Calendar = .autoupdatingCurrent) -> String {
+        let style = Date.FormatStyle(date: .abbreviated, time: .omitted, locale: locale, calendar: calendar, timeZone: .gmt)
+        return date.formatted(style)
+    }
+
     @ViewBuilder private var registeredRow: some View {
         if let registered = summary.registered {
-            let date = registered.formatted(date: .abbreviated, time: .omitted)
-            let changed = summary.lastModified.map { String(localized: " · changed \($0.formatted(date: .abbreviated, time: .omitted))") } ?? ""
+            let date = Self.registryDateText(registered)
+            let changed = summary.lastModified.map { String(localized: " · changed \(Self.registryDateText($0))") } ?? ""
             WhoisRow("Registered", text: date + changed)
         }
     }

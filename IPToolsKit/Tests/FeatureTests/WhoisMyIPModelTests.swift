@@ -262,6 +262,35 @@ import Testing
         #expect(await waitUntil { isLoaded(model, .v6) })
     }
 
+    @Test func appearingAgainClearsABackgroundedOwnWhois() async {
+        let api = api()
+        let model = makeWhoisModel(api: api)
+        model.appeared()
+        #expect(await settled(model))
+        api.delay = .seconds(5)
+        model.myFamily = .v6
+        #expect(await waitUntil { model.myWhois[.v6] == .loading })
+        model.stopForBackground()
+        #expect(model.myWhois[.v6] == .failed(.backgrounded))
+        api.delay = nil
+        model.appeared()
+        #expect(await waitUntil { isLoaded(model, .v6) })
+    }
+
+    @Test func quickRepeatedRetriesEndWithTheFreshResult() async {
+        let api = api()
+        api.failing = ["whois", "network-info"]
+        let model = makeWhoisModel(api: api)
+        model.appeared()
+        #expect(await waitUntil { if case .failed? = model.myWhois[.v4] { true } else { false } })
+        api.failing = []
+        model.retryMyWhois()
+        model.retryMyWhois()
+        #expect(await waitUntil { isLoaded(model, .v4) })
+        try? await Task.sleep(for: .milliseconds(100))
+        #expect(isLoaded(model, .v4))
+    }
+
     @Test func returningFromBackgroundRechecksFailedRows() async {
         let api = api()
         api.delay = .seconds(5)

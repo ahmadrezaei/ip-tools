@@ -15,7 +15,9 @@ import WhoisFeature
     public let ping: PingModel, trace: TraceModel, bgp: BGPMapModel, whois: WhoisModel
 
     private init(router: AppRouter, recents: RecentsStore, settings: SettingsStore, network: NetworkMonitor,
-                 pingService: any PingService, traceService: any TraceService, api: any RIPEstatAPI) {
+                 pingService: any PingService, traceService: any TraceService, api: any RIPEstatAPI,
+                 localAddresses: @escaping @Sendable () -> [LocalAddress] = { LocalInterfaces.current() },
+                 ignoresVPNState: Bool = false) {
         self.router = router
         self.recents = recents
         self.settings = settings
@@ -25,25 +27,34 @@ import WhoisFeature
                                 recents: recents, router: router)
         self.bgp = BGPMapModel(api: api, recents: recents, router: router, traceService: traceService,
                                settings: settings, network: network)
-        self.whois = WhoisModel(api: api, recents: recents, router: router, settings: settings, network: network)
+        self.whois = WhoisModel(api: api, recents: recents, router: router, settings: settings, network: network,
+                                localAddresses: localAddresses, ignoresVPNState: ignoresVPNState)
     }
 
     /// Pinger, Tracer, RIPEstatClient.
     public static func live() -> AppEnvironment {
         #if DEBUG
         if let mode = ScreenshotMode.current {
-            let defaults = ScreenshotMode.isolatedDefaults()
-            let env = AppEnvironment(router: AppRouter(), recents: RecentsStore(defaults: defaults),
-                                     settings: SettingsStore(defaults: defaults), network: NetworkMonitor(),
-                                     pingService: Pinger(), traceService: Tracer(),
-                                     api: ScreenshotMyIPAPI(base: RIPEstatClient()))
-            mode.apply(to: env)
-            return env
+            return screenshot(mode: mode, base: RIPEstatClient())
         }
         #endif
         return AppEnvironment(router: AppRouter(), recents: RecentsStore(), settings: SettingsStore(), network: NetworkMonitor(),
                               pingService: Pinger(), traceService: Tracer(), api: RIPEstatClient())
     }
+
+    #if DEBUG
+    /// Screenshot runs show fixed addresses only: no real public address, no real local interfaces, no real VPN state.
+    static func screenshot(mode: ScreenshotMode, base: any RIPEstatAPI) -> AppEnvironment {
+        let defaults = ScreenshotMode.isolatedDefaults()
+        let env = AppEnvironment(router: AppRouter(), recents: RecentsStore(defaults: defaults),
+                                 settings: SettingsStore(defaults: defaults), network: NetworkMonitor(),
+                                 pingService: Pinger(), traceService: Tracer(),
+                                 api: ScreenshotMyIPAPI(base: base),
+                                 localAddresses: { ScreenshotMode.localAddresses }, ignoresVPNState: true)
+        mode.apply(to: env)
+        return env
+    }
+    #endif
 
     /// The 8.8.8.8 trace of DESIGN §6.11.6 (hop 10 silent). Other targets get the same script.
     static func googleTraceScript() -> [[ProbeResult]] {

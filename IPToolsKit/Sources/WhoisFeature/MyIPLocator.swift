@@ -75,7 +75,7 @@ actor MyIPLocator {
 
     /// Yields a snapshot with `.checking` slots first, then one per answer. A fresh cached snapshot of the same
     /// generation is yielded alone. Failures are never cached.
-    func snapshot(generation: Int, supportsV4: Bool, supportsV6: Bool, viaVPN: Bool, force: Bool) -> AsyncStream<MyIPSnapshot> {
+    func snapshot(generation: Int, supportsV6: Bool, viaVPN: Bool, force: Bool) -> AsyncStream<MyIPSnapshot> {
         let (stream, continuation) = AsyncStream.makeStream(of: MyIPSnapshot.self)
         if !force, let cached, cached.generation == generation, now().timeIntervalSince(cached.fetchedAt) < Self.cacheLifetime {
             continuation.yield(cached)

@@ -126,7 +126,7 @@ struct WhoisLoader: Sendable {
         try gathered.failIfBothFailed()
 
         // ARIN refuses bare IPv6 addresses: ask again with the routed prefix.
-        if let response = gathered.inputs.whois, !response.records.isEmpty, seams.isNoMatch(response),
+        if let response = gathered.inputs.whois, seams.isNoMatch(response),
            let prefix = gathered.inputs.network?.prefix, prefix != resource {
             do {
                 gathered.inputs.whois = try await api.whois(prefix)
@@ -140,12 +140,16 @@ struct WhoisLoader: Sendable {
 
         var wanted = Set(gathered.inputs.network?.originASNs ?? [])
         wanted.formUnion(Self.irrOrigins(gathered.inputs.whois))
-        let asNames = await fetchNames(wanted, known: [:], into: &gathered)
-        if includeLocation {
-            let location = await attempt { try await api.geolocation(resource) }
-            try Task.checkCancellation()
-            gathered.take(location, part: .location) { _, _ in }
-            if case let .success(value) = location { gathered.location = value }
+        // Names and location do not depend on each other: ask for both at once.
+        let missing = wanted.sorted()
+        async let namesFetch = fetchNamesResult(missing)
+        async let locationFetch = fetchLocationResult(resource)
+        let (namesResult, locationResult) = await (namesFetch, locationFetch)
+        try Task.checkCancellation()
+        let asNames = mergeNames(namesResult, known: [:], into: &gathered)
+        if let locationResult {
+            gathered.take(locationResult, part: .location) { _, _ in }
+            if case let .success(value) = locationResult { gathered.location = value }
         }
         return try finish(subject, query: resource, gathered: gathered, asNames: asNames)
     }
@@ -208,17 +212,33 @@ struct WhoisLoader: Sendable {
 
     /// One bulk `as-names` call for the origins that have no holder yet. A failure only drops the names.
     private func fetchNames(_ wanted: Set<UInt32>, known: [UInt32: String], into gathered: inout Gathered) async -> [UInt32: String] {
-        var names = known
         let missing = wanted.subtracting(known.keys).sorted()
-        if !missing.isEmpty {
-            let api = api
-            switch await attempt({ try await api.asNames(missing) }) {
-            case let .success(fetched): names.merge(fetched) { current, _ in current }
-            case let .failure(error): gathered.record(error, part: .names)
-            }
+        let result = await fetchNamesResult(missing)
+        return mergeNames(result, known: known, into: &gathered)
+    }
+
+    private func fetchNamesResult(_ missing: [UInt32]) async -> Result<[UInt32: String], any Error> {
+        guard !missing.isEmpty else { return .success([:]) }
+        let api = api
+        return await attempt { try await api.asNames(missing) }
+    }
+
+    private func mergeNames(_ result: Result<[UInt32: String], any Error>, known: [UInt32: String],
+                            into gathered: inout Gathered) -> [UInt32: String] {
+        var names = known
+        switch result {
+        case let .success(fetched): names.merge(fetched) { current, _ in current }
+        case let .failure(error): gathered.record(error, part: .names)
         }
         gathered.inputs.names = names
         return names
+    }
+
+    /// `nil` when locations are switched off.
+    private func fetchLocationResult(_ resource: String) async -> Result<GeoLocation?, any Error>? {
+        guard includeLocation else { return nil }
+        let api = api
+        return await attempt { try await api.geolocation(resource) }
     }
 
     private func finish(_ subject: WhoisSubject, query: String, gathered: Gathered, asNames: [UInt32: String]) throws -> WhoisResult {

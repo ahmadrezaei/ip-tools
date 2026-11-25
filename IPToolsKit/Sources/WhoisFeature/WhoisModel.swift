@@ -82,6 +82,14 @@ struct WhoisNetworkState {
     @ObservationIgnored var networkDebounce: Duration = .seconds(2)
     @ObservationIgnored var networkState: () -> WhoisNetworkState = { WhoisNetworkState() }
 
+    /// What was on screen when the running lookup started, so Stop can put it back.
+    private struct Shown {
+        var phase: Phase
+        var hostAddresses: [IPAddress]
+        var shownAs: String?
+    }
+
+    @ObservationIgnored private var shownBeforeLookup: Shown?
     @ObservationIgnored private var runID = 0
     @ObservationIgnored private var runTask: Task<Void, Never>?
     @ObservationIgnored private var myIPTask: Task<Void, Never>?
@@ -90,6 +98,7 @@ struct WhoisNetworkState {
     @ObservationIgnored private var debounceTask: Task<Void, Never>?
     @ObservationIgnored private var myWhoisTasks: [IPVersion: Task<Void, Never>] = [:]
     @ObservationIgnored private var myWhoisAddress: [IPVersion: IPAddress] = [:]
+    @ObservationIgnored private var myWhoisRun: [IPVersion: Int] = [:]
     @ObservationIgnored private var userPickedFamily = false
     @ObservationIgnored private var adjustingFamily = false
     @ObservationIgnored private var visible = false
@@ -101,7 +110,8 @@ struct WhoisNetworkState {
                 },
                 reverseName: @escaping @Sendable (IPAddress) async -> String? = { await Resolver.reverseName(for: $0) },
                 localAddresses: @escaping @Sendable () -> [LocalAddress] = { LocalInterfaces.current() },
-                includeLocation: Bool = true) {
+                includeLocation: Bool = true,
+                ignoresVPNState: Bool = false) {
         self.api = api
         self.recents = recents
         self.router = router
@@ -115,7 +125,8 @@ struct WhoisNetworkState {
         if let network {
             networkState = {
                 WhoisNetworkState(online: network.isOnline, supportsIPv4: network.supportsIPv4,
-                                  supportsIPv6: network.supportsIPv6, usesVPN: network.usesVPN,
+                                  supportsIPv6: network.supportsIPv6,
+                                  usesVPN: network.usesVPN && !ignoresVPNState,
                                   generation: network.pathGeneration)
             }
         }
@@ -162,7 +173,8 @@ struct WhoisNetworkState {
         case let .prefix(ip, length):
             let network = rules.masked(ip, length)
             if let range = rules.specialRange(network, length) {
-                return .local(LocalVerdict(input: trimmed, reason: .address(range), embeddedIPv4: nil))
+                return .local(LocalVerdict(input: trimmed, reason: .address(range), embeddedIPv4: nil,
+                                                    isSingleAddress: false))
             }
             return .subject(.prefix(network, length: length))
         case let .asn(number):
@@ -202,6 +214,7 @@ struct WhoisNetworkState {
     func lookUp(address: IPAddress, hostname: String) {
         let others = hostAddresses
         targetText = hostname
+        rememberShown()
         stopRunning()
         shownAs = nil
         let id = runID
@@ -223,9 +236,39 @@ struct WhoisNetworkState {
     }
 
     public func cancel() {
-        let wasRunning = isLookingUp
+        guard isLookingUp else { return }
         stopRunning()
-        if wasRunning { phase = .myIP }
+        guard let shown = shownBeforeLookup else {
+            phase = .myIP
+            return
+        }
+        shownBeforeLookup = nil
+        phase = shown.phase
+        targetText = Self.text(of: shown.phase)
+        hostAddresses = shown.hostAddresses
+        shownAs = shown.shownAs
+    }
+
+    /// The field text that produced a settled phase.
+    private static func text(of phase: Phase) -> String {
+        switch phase {
+        case let .loaded(result):
+            if case let .address(ip, hostname) = result.subject { hostname ?? ip.description } else { result.subject.resource }
+        case let .local(verdict): verdict.input
+        default: ""
+        }
+    }
+
+    /// Remembers a settled result or local answer before a new lookup replaces it.
+    private func rememberShown() {
+        switch phase {
+        case .loaded, .local:
+            shownBeforeLookup = Shown(phase: phase, hostAddresses: hostAddresses, shownAs: shownAs)
+        case .resolving, .loading:
+            break
+        case .myIP, .failed:
+            shownBeforeLookup = nil
+        }
     }
 
     /// ‹ My IP: clears `targetText`, `phase = .myIP`.
@@ -234,6 +277,7 @@ struct WhoisNetworkState {
         targetText = ""
         hostAddresses = []
         shownAs = nil
+        shownBeforeLookup = nil
         phase = .myIP
     }
 
@@ -244,6 +288,7 @@ struct WhoisNetworkState {
     }
 
     private func start(_ classified: Classified, text: String) {
+        rememberShown()
         stopRunning()
         hostAddresses = []
         shownAs = nil
@@ -320,7 +365,7 @@ struct WhoisNetworkState {
         case let .loaded(result):
             if case let .address(ip, hostname) = result.subject { hostname ?? ip.description } else { nil }
         case let .local(verdict):
-            if case .address = verdict.reason { verdict.input } else { nil }
+            verdict.canProbe ? verdict.input : nil
         default:
             nil
         }
@@ -350,8 +395,17 @@ struct WhoisNetworkState {
     public func appeared() {
         visible = true
         localAddresses = readLocalAddresses()
+        clearBackgroundedWhois()
+        loadMyWhoisIfNeeded()
         guard myIPTask == nil || myIPTaskGeneration != pathGeneration, !myIPIsFresh else { return }
         loadMyIP(force: false)
+    }
+
+    /// A background stop is not a real failure: forget it so the whois is asked for again.
+    private func clearBackgroundedWhois() {
+        for family in IPVersion.allCases where myWhois[family] == .failed(.backgrounded) {
+            myWhois[family] = nil
+        }
     }
 
     func disappeared() {
@@ -408,7 +462,7 @@ struct WhoisNetworkState {
         let viaVPN = state.usesVPN || localAddresses.contains { $0.interface == .vpn }
         let locator = locator
         myIPTask = Task { [weak self] in
-            let stream = await locator.snapshot(generation: state.generation, supportsV4: state.supportsIPv4,
+            let stream = await locator.snapshot(generation: state.generation,
                                                 supportsV6: state.supportsIPv6, viaVPN: viaVPN, force: force)
             for await snapshot in stream {
                 guard let self, !Task.isCancelled, run == self.myIPRun else { return }
@@ -461,17 +515,19 @@ struct WhoisNetworkState {
         guard let address = myIP?.address(family), myWhois[family] == nil else { return }
         myWhois[family] = .loading
         myWhoisAddress[family] = address
+        let token = myWhoisRun[family, default: 0] + 1
+        myWhoisRun[family] = token
         let subject = WhoisSubject.address(address, hostname: nil)
         myWhoisTasks[family] = Task { [weak self] in
             guard let self else { return }
             do {
                 let result = try await self.makeLoader().load(subject)
-                guard self.myWhoisAddress[family] == address else { return }
+                guard self.myWhoisAddress[family] == address, self.myWhoisRun[family] == token else { return }
                 self.myWhois[family] = .loaded(result)
             } catch is CancellationError {
                 return
             } catch {
-                guard self.myWhoisAddress[family] == address else { return }
+                guard self.myWhoisAddress[family] == address, self.myWhoisRun[family] == token else { return }
                 self.myWhois[family] = .failed(WhoisFailure.from(error))
             }
         }
@@ -509,10 +565,8 @@ struct WhoisNetworkState {
     }
 
     /// The app is active again: pick up what the background stop interrupted.
-    func resumeFromBackground() {
-        for family in IPVersion.allCases where myWhois[family] == .failed(.backgrounded) {
-            myWhois[family] = nil
-        }
+    public func resumeFromBackground() {
+        clearBackgroundedWhois()
         if visible { appeared() }
         loadMyWhoisIfNeeded()
     }

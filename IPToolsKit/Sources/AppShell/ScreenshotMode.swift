@@ -3,6 +3,7 @@
 
 #if DEBUG
 import Foundation
+import NetCore
 import RIPEstat
 import SharedUI
 
@@ -42,6 +43,12 @@ struct ScreenshotMode: Equatable {
         defaults.removePersistentDomain(forName: name)
         return defaults
     }
+
+    /// The only local addresses a screenshot shows: Wi-Fi on en0 with a documentation IPv6.
+    static let localAddresses: [LocalAddress] = [
+        LocalAddress(interface: .wifi, name: "en0", address: IPAddress("192.168.1.23")!),
+        LocalAddress(interface: .wifi, name: "en0", address: IPAddress("2001:db8::23")!),
+    ]
 
     @MainActor func apply(to env: AppEnvironment) {
         if let pingCount { env.settings.ping.count = pingCount }

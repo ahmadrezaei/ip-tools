@@ -101,10 +101,6 @@ struct LocalAddressCard: View {
     var onTrace: () -> Void = {}
     var onLookUpEmbedded: (IPAddress) -> Void = { _ in }
 
-    private var canProbe: Bool {
-        if case let .address(range) = verdict.reason { range.allowsProbing } else { false }
-    }
-
     var body: some View {
         VStack(spacing: 12) {
             card
@@ -115,7 +111,7 @@ struct LocalAddressCard: View {
                 .buttonStyle(.borderedProminent)
                 .padding(.horizontal)
             }
-            if canProbe {
+            if verdict.canProbe {
                 WhoisActions(showsMap: false, onPing: onPing, onTrace: onTrace)
             }
         }

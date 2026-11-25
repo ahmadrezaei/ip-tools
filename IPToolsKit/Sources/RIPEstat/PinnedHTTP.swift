@@ -178,7 +178,7 @@ private final class Exchange: @unchecked Sendable {
                 let parsed = try HTTP1Response.parse(buffer, atEOF: isComplete)
                 finish(.success((parsed.status, parsed.body)))
             } catch HTTP1Response.ParseError.incomplete {
-                if isComplete {
+                if isComplete || buffer.count > HTTP1Response.bufferLimit {
                     finish(.failure(PublicIPError.badResponse(status: 0)))
                 } else {
                     receive()
@@ -214,6 +214,10 @@ enum HTTP1Response {
     }
 
     static let bodyLimit = 64 * 1024
+    /// Longest chunk-size or trailer line that may still be waiting for its CRLF.
+    static let maxLineLength = 16 * 1024
+    /// The reader gives up on a reply that is still incomplete after this many bytes.
+    static let bufferLimit = bodyLimit + 16 * 1024
 
     /// Parses a complete response. `atEOF` says whether the peer has closed: a body without `Content-Length` or
     /// chunking runs to the end of the stream, so it is only complete at EOF. Header names are lower-cased.
@@ -267,7 +271,7 @@ enum HTTP1Response {
         var index = 0
         let crlf: [UInt8] = [0x0D, 0x0A]
         while true {
-            guard let lineEnd = find(crlf, in: bytes, from: index) else { throw ParseError.incomplete }
+            guard let lineEnd = find(crlf, in: bytes, from: index) else { throw incompleteLine(bytes.count - index) }
             let sizeLine = String(decoding: bytes[index..<lineEnd], as: UTF8.self)
             let sizeText = sizeLine.split(separator: ";", maxSplits: 1).first.map(String.init) ?? ""
             guard let size = Int(sizeText.trimmingCharacters(in: .whitespaces), radix: 16), size >= 0 else {
@@ -277,7 +281,9 @@ enum HTTP1Response {
             if size == 0 {
                 // Optional trailers, then the final blank line.
                 while true {
-                    guard let trailerEnd = find(crlf, in: bytes, from: index) else { throw ParseError.incomplete }
+                    guard let trailerEnd = find(crlf, in: bytes, from: index) else {
+                        throw incompleteLine(bytes.count - index)
+                    }
                     if trailerEnd == index { return body }
                     index = trailerEnd + 2
                 }
@@ -288,6 +294,11 @@ enum HTTP1Response {
             guard bytes[index + size] == 0x0D, bytes[index + size + 1] == 0x0A else { throw ParseError.malformed }
             index += size + 2
         }
+    }
+
+    /// A chunk-size or trailer line that has not ended: more bytes are needed, but not without bound.
+    private static func incompleteLine(_ length: Int) -> ParseError {
+        length > maxLineLength ? .malformed : .incomplete
     }
 
     private static func find(_ needle: [UInt8], in haystack: [UInt8], from start: Int) -> Int? {

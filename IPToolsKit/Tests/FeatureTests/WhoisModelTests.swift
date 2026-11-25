@@ -176,6 +176,64 @@ import Testing
         #expect(model.phase == .myIP)
     }
 
+    @Test func cancelPutsBackTheResultThatWasShown() async {
+        let api = WhoisFakeAPI()
+        sampleNetwork(api)
+        sampleNetwork(api, ip: "8.8.4.4")
+        let model = makeWhoisModel(api: api)
+        model.lookUp("8.8.8.8")
+        #expect(await waitUntil { loaded(model) != nil })
+        let shown = loaded(model)
+        api.delay = .seconds(5)
+        model.lookUp("8.8.4.4")
+        #expect(model.isLookingUp)
+        model.cancel()
+        #expect(loaded(model) == shown)
+        #expect(model.targetText == "8.8.8.8")
+        try? await Task.sleep(for: .milliseconds(100))
+        #expect(loaded(model) == shown)
+    }
+
+    @Test func cancelPutsBackALocalAnswer() async {
+        let api = WhoisFakeAPI()
+        sampleNetwork(api)
+        api.delay = .seconds(5)
+        let model = makeWhoisModel(api: api)
+        model.lookUp("192.168.1.1")
+        let local = model.phase
+        model.lookUp("8.8.8.8")
+        model.cancel()
+        #expect(model.phase == local)
+        #expect(model.targetText == "192.168.1.1")
+    }
+
+    @Test func cancelAfterAFailureGoesToMyIP() async {
+        let api = WhoisFakeAPI()
+        api.delay = .seconds(5)
+        let model = makeWhoisModel(api: api)
+        model.lookUp("not a host!")
+        #expect(model.phase == .failed(.invalidInput))
+        model.lookUp("8.8.8.8")
+        model.cancel()
+        #expect(model.phase == .myIP)
+    }
+
+    @Test func prefixInReservedSpaceCannotBePinged() {
+        let router = AppRouter(selectedTool: .whois)
+        let model = makeWhoisModel(api: WhoisFakeAPI(), router: router)
+        model.lookUp("192.168.0.0/16")
+        guard case let .local(verdict) = model.phase else { Issue.record("expected local"); return }
+        #expect(!verdict.isSingleAddress)
+        #expect(!verdict.canProbe)
+        model.ping()
+        model.trace()
+        #expect(router.takeRequest(for: .ping) == nil)
+        #expect(router.takeRequest(for: .traceroute) == nil)
+        model.lookUp("192.168.1.1")
+        guard case let .local(single) = model.phase else { Issue.record("expected local"); return }
+        #expect(single.canProbe)
+    }
+
     @Test func showMyIPClearsTheField() async {
         let api = WhoisFakeAPI()
         sampleNetwork(api)

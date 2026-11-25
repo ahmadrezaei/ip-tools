@@ -109,6 +109,20 @@ import SharedUI
         #expect(base.whatsMyIPCalls == 0)
     }
 
+    @Test @MainActor func screenshotEnvironmentShowsOnlyTheFixedLocalAddressesAndNoVPN() async {
+        let mode = ScreenshotMode(arguments: ["app", "-screenshotTool", "whois"])!
+        let env = AppEnvironment.screenshot(mode: mode, base: CountingAPI())
+        env.whois.appeared()
+        #expect(env.whois.localAddresses == ScreenshotMode.localAddresses)
+        #expect(env.whois.localAddresses.map(\.address.description) == ["192.168.1.23", "2001:db8::23"])
+        #expect(env.whois.localAddresses.allSatisfy { $0.interface == .wifi && $0.name == "en0" })
+        let done = await waitUntil { env.whois.myIP?.v4 != nil && env.whois.myIP?.v4 != .checking }
+        #expect(done)
+        #expect(env.whois.myIP?.viaVPN == false)
+        env.whois.stopForBackground()
+        env.recents.clear()
+    }
+
     @Test func absentOrInvalidToolIsNil() {
         #expect(ScreenshotMode(arguments: ["app"]) == nil)
         #expect(ScreenshotMode(arguments: ["app", "-screenshotTool", "nope"]) == nil)

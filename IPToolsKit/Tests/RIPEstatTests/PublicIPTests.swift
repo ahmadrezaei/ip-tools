@@ -79,6 +79,16 @@ private let networkTestsEnabled = ProcessInfo.processInfo.environment["IPTOOLS_N
         #expect(throws: HTTP1Response.ParseError.incomplete) { try HTTP1Response.parse(missingTrailerEnd) }
     }
 
+    @Test func endlessChunkSizeOrTrailerLineIsRejected() {
+        let head = "HTTP/1.1 200 OK\r\nTransfer-Encoding: chunked\r\n\r\n"
+        let endless = bytes(head + String(repeating: "a", count: HTTP1Response.maxLineLength + 1))
+        #expect(throws: HTTP1Response.ParseError.malformed) { try HTTP1Response.parse(endless) }
+        let shortLine = bytes(head + "ab")
+        #expect(throws: HTTP1Response.ParseError.incomplete) { try HTTP1Response.parse(shortLine) }
+        let trailer = head + "0\r\n" + String(repeating: "t", count: HTTP1Response.maxLineLength + 1)
+        #expect(throws: HTTP1Response.ParseError.malformed) { try HTTP1Response.parse(bytes(trailer)) }
+    }
+
     @Test func malformedResponses() {
         let cases = [
             "SMTP/1.0 220 hi\r\n\r\n",

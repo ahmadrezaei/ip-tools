@@ -24,13 +24,13 @@ public enum LocalInterfaces {
         assemble(rawAddresses())
     }
 
-    /// Kind by BSD name: `en0` Wi-Fi, `pdp_ip*` cellular, other `en*` wired, `utun*`/`ipsec*` VPN only when the
+    /// Kind by BSD name: `en0` Wi-Fi, `pdp_ip*` cellular, other `en*` wired, `utun*` VPN only when the
     /// interface has a non-link-local address (iOS keeps idle `utun` interfaces), anything else `.other`.
     static func classify(name: String, hasNonLinkLocal: Bool) -> LocalAddress.Interface {
         if name == "en0" { return .wifi }
         if name.hasPrefix("pdp_ip") { return .cellular }
         if name.hasPrefix("en") { return .wired }
-        if name.hasPrefix("utun") || name.hasPrefix("ipsec") { return hasNonLinkLocal ? .vpn : .other }
+        if name.hasPrefix("utun") { return hasNonLinkLocal ? .vpn : .other }
         return .other
     }
 

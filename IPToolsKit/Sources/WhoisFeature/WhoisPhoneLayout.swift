@@ -161,7 +161,7 @@ struct WhoisContextLine: View {
                 .foregroundStyle(.tint)
                 .frame(minHeight: 44)
                 if showsProgress { ProgressView().controlSize(.small) }
-                Text(text).font(.footnote).foregroundStyle(.secondary).lineLimit(2)
+                Text(text).font(.footnote).foregroundStyle(.secondary)
                 Spacer(minLength: 0)
                 if others.count > 1 { otherMenu }
             }

@@ -32,6 +32,7 @@ public struct RootView: View {
                     environment.whois.stopForBackground()
                 } else if scenePhase == .active {
                     environment.bgp.resumeFromBackground()
+                    environment.whois.resumeFromBackground()
                 }
             }
     }

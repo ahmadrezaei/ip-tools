@@ -97,6 +97,8 @@ struct MyIPRow: View {
     let version: IPVersion
 
     @Environment(\.dynamicTypeSize) private var typeSize
+    @ScaledMetric(relativeTo: .body) private var v4Size: CGFloat = 17
+    @ScaledMetric(relativeTo: .body) private var v6Size: CGFloat = 15
 
     private var slot: MyIPSnapshot.Slot { snapshot.slot(version) }
     private var isSelected: Bool { model.myFamily == version && snapshot.address(version) != nil }
@@ -142,7 +144,7 @@ struct MyIPRow: View {
         case let .found(address, name):
             VStack(alignment: .leading, spacing: 1) {
                 Text(address.description)
-                    .font(.system(size: version == .v4 ? 17 : 15, weight: .semibold, design: .monospaced))
+                    .font(.system(size: version == .v4 ? v4Size : v6Size, weight: .semibold, design: .monospaced))
                     .minimumScaleFactor(0.8)
                     .lineLimit(2)
                     .textSelection(.enabled)

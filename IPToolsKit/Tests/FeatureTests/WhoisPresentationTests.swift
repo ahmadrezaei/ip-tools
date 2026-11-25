@@ -30,6 +30,19 @@ import Testing
         #expect(IPSpeech.asn(15169) == "AS 15169")
     }
 
+    // MARK: Registry dates
+
+    @Test func registryDatesAreShownInUTCWhateverTheDeviceZone() {
+        let registered = Date(timeIntervalSince1970: 1_703_721_600)   // "2023-12-28" parsed as midnight UTC
+        let english = Locale(identifier: "en_US")
+        let gregorian = Calendar(identifier: .gregorian)
+        #expect(WhoisSummaryCard.registryDateText(registered, locale: english, calendar: gregorian) == "Dec 28, 2023")
+        // The device-zone format of the same instant is a day early west of UTC: that was the bug.
+        let newYork = TimeZone(identifier: "America/New_York")!
+        let local = Date.FormatStyle(date: .abbreviated, time: .omitted, locale: english, calendar: gregorian, timeZone: newYork)
+        #expect(registered.formatted(local) == "Dec 27, 2023")
+    }
+
     // MARK: Device interpretation
 
     private func local(_ interface: LocalAddress.Interface, _ address: String) -> LocalAddress {

@@ -25,14 +25,14 @@ import Testing
         return (all, all.last)
     }
 
-    private func run(_ locator: MyIPLocator, generation: Int = 1, v4: Bool = true, v6: Bool = true, force: Bool = false) async -> MyIPSnapshot? {
-        await last(await locator.snapshot(generation: generation, supportsV4: v4, supportsV6: v6, viaVPN: false, force: force)).last
+    private func run(_ locator: MyIPLocator, generation: Int = 1, v6: Bool = true, force: Bool = false) async -> MyIPSnapshot? {
+        await last(await locator.snapshot(generation: generation, supportsV6: v6, viaVPN: false, force: force)).last
     }
 
     @Test func bothFamiliesAreFoundAndProgressiveSnapshotsStartChecking() async {
         let api = WhoisFakeAPI()
         api.publicIP = [.v4: .success("193.0.6.139"), .v6: .success("2001:67c:2e8:22::c100:696")]
-        let result = await last(await locator(api).snapshot(generation: 1, supportsV4: true, supportsV6: true, viaVPN: true, force: false))
+        let result = await last(await locator(api).snapshot(generation: 1, supportsV6: true, viaVPN: true, force: false))
         #expect(result.snapshots.first?.v4 == .checking)
         #expect(result.snapshots.first?.v6 == .checking)
         #expect(result.last?.v4 == .found(ip("193.0.6.139"), reverseName: "rev.example"))
