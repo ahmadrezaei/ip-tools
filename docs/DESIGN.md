@@ -5,6 +5,8 @@ Companion files: [`mockup.html`](mockup.html) (visual mockups, open in a browser
 
 **v1.1 addendum (draft for approval, 2026-11-08):** BGP Map gets a new default view, **Your route** (§6.11), the existing graph becomes **All routes (worldwide)** with a plain-English summary and legend (§6.12), and Ping gets a visible count control (§4.3). Privacy wording changes are in §9; types, signatures and the parallel work split are in §12.7.
 
+**v1.2 addendum (draft for approval, 2026-11-25):** a fourth tool, **Whois**, opens on *your public IP* (IPv4 and IPv6, checked separately) with the whois of your network, and looks up any IP, prefix, AS number or host name. Data stays RIPEstat-only. Spec, decisions to confirm and the work split: §14. Mockups: [`mockup-whois.html`](mockup-whois.html).
+
 | | |
 |---|---|
 | App Store name | IP Tools: Ping & Traceroute |
@@ -1436,3 +1438,824 @@ Merge order: L → S → B (B's integration test of the handed-over trace needs 
 - **R8 (v1.1): The You AS is not the first traced AS** (VPN, iCloud Private Relay, tunnels). *Mitigation:* rule 5 in §6.11.6 shows both without claiming a hop inside the user's AS. Private Relay does not affect ICMP, but it may change what `whats-my-ip` returns for Safari. The app uses URLSession, which Private Relay does not proxy by default.
 
 **Out of scope for v1 (deliberately):** mtr-style continuous traceroute, TCP/UDP ping, whois, DNS lookup tool, history of past results, iCloud sync, widgets/Live Activities, Mac Catalyst, localisation beyond English.
+
+---
+
+## 14. My IP & Whois (v1.2)
+
+Status: **draft for approval** (2026-11-25). No code written yet. Mockups: [`mockup-whois.html`](mockup-whois.html).
+This section supersedes §0 item 1 ("no whois") and the "whois" entry in §13 *Out of scope*.
+
+**Owner request:** "add feature to app to show my current ip and my ip whois. also user can whois custom ip. first design it and after my approve start it"
+
+Decisions that need the owner's answer are marked **[Confirm Dn]**, each with the recommended pick. The full list is in §14.18.
+
+### 14.0 Decisions at a glance
+
+1. **A fourth tool, "Whois", with your own IP as its default content.** iPhone gets a fourth tab (`person.text.rectangle`). iPad gets a fourth sidebar row. The screen opens on **Your public IP** (IPv4 and IPv6) with the whois of your network underneath. Typing any IP, prefix, AS number or host name in the target bar looks that up instead. **[Confirm D1]**
+2. **Both address families.** The app asks RIPEstat `whats-my-ip` twice, once pinned to IPv4 and once pinned to IPv6, using `Network.framework` (`NWProtocolIP.Options.version`). `URLSession` cannot force a family. If one family has no route, that row says so plainly ("No IPv6 on this network"). The whois below shows **IPv4 by default** when both exist, with an `IPv4 | IPv6` switch. **[Confirm D3]**
+3. **Data source: RIPEstat only.** `whois` (raw RIR objects for ARIN, RIPE NCC, APNIC and AFRINIC), plus `network-info` / `prefix-overview` / `as-overview` for BGP facts, `abuse-contact-finder`, `rir-stats-country` and `as-names`. No RDAP, so the privacy promise stays one sentence: "only RIPEstat is contacted". The known gaps (LACNIC has no records, RIPE-style objects carry an org *handle* but no org *name*, ARIN fails on bare IPv6 addresses) have specified fallbacks (§14.7, §14.9). **[Confirm D2]**
+4. **One summary card, normalised across RIRs**, with the raw records one tap away. Every field in the card says where it came from when it isn't the registry itself (e.g. "Network operator · from AS22548").
+5. **Accepted input:** IPv4/IPv6 address, prefix, AS number and host name. A host name is resolved on the device and the *address* is looked up, with a clear line that this is not domain-registration whois. **[Confirm D5]**
+6. **Private, reserved, CGNAT, documentation and special ASNs are answered locally,** with no request, using full IANA special-purpose tables (new in NetCore). IPv4-mapped, NAT64 and 6to4 IPv6 addresses offer "Look up 8.8.8.8 instead".
+7. **Approximate location** (MaxMind GeoLite2, through RIPEstat `maxmind-geo-lite`) as one clearly labelled row, on screen only, never in the export. **[Confirm D4]**
+8. **"This device" card:** the device's own local addresses (Wi-Fi, cellular, VPN) read with `getifaddrs`, never sent anywhere, plus a one-line NAT/CGNAT explanation. **[Confirm D7]**
+9. **Cross-links both ways** through `AppRouter`: Traceroute hop → *Whois this hop* / *Whois AS7922*; Ping and Traceroute result headers → Whois icon button; BGP AS details → *Whois AS3356*; BGP toolbar menu → *Whois 1.1.1.0/24*. From Whois → **Ping**, **Traceroute**, **Map in BGP**, and drill-down into the origin AS. **[Confirm D10]**
+10. **Store metadata:** keep the name, change the subtitle to `Whois, BGP Map & ASN Lookup` (27/30), new keywords (100/100), add a Whois screenshot. **[Confirm D8, D9]**
+11. **Architecture:** a new module `WhoisFeature` (NetCore, RIPEstat, SharedUI), new RIPEstat calls and a pure `WhoisSummarizer`, new NetCore special-purpose tables and local-interface reader, `Tool.whois`. Three parallel agents with no file overlap (§14.16).
+
+### 14.1 Goals and non-goals
+
+**Goals.** In one glance: "this is my public IP (v4 and v6), this is the network it belongs to, who runs it, which country, and where to report abuse". The same card for any IP, prefix or AS. Honest about where each value comes from. Works for every RIR, degrading gracefully where RIPEstat has less data.
+
+**Non-goals (v1.2):** domain-name registration whois (`whois example.com` at a TLD registry); RDAP; a map view of the location; history of past lookups beyond the shared recents; reverse whois (by org or e-mail); bulk lookups; widgets.
+
+### 14.2 Navigation and placement
+
+#### 14.2.1 Recommendation: a fourth tool, named "Whois"
+| Option | Verdict |
+|---|---|
+| **A. Fourth tab "Whois", My IP as its default content** (recommended) | One obvious place for both requests. "Whois" matches the existing naming (tools are named after what they do: Ping, Traceroute, BGP Map). Your IP is simply the whois of *you*, so it opens with no typing. A 4-item tab bar is standard (5 is the limit before "More"). ⌘1–3 keep their meaning; Whois is ⌘4. |
+| B. Fourth tab "My IP" | Friendlier for casual users, but custom whois and cross-links ("Whois this hop" landing in "My IP") read oddly, and the tab name doesn't carry the search keyword. |
+| C. Inside BGP Map (whois section in AS details / prefix header) | Hidden. Nobody looks for "my IP" in a BGP graph. BGP's screen is already dense. |
+| D. A sheet from the toolbar of every tool | Not discoverable, no recents, no iPad sidebar presence. |
+
+| Tab | Title | SF Symbol |
+|---|---|---|
+| 4th (after BGP Map) | Whois | `person.text.rectangle` |
+
+Alternatives considered for the symbol: `text.magnifyingglass` (reads as "search text"), `network` (already used for the RIPEstat row in About), `globe` (reads as "web"). `person.text.rectangle` reads as "who holds this", it's in SF Symbols 4 (iOS 16+), and it is distinct from the other three tab glyphs.
+
+- **iPhone:** `TabView` gains a fourth tab, Whois, with its own `NavigationStack` (as the others). The order stays Ping · Traceroute · BGP Map · Whois, so nobody's muscle memory breaks.
+- **iPad:** the sidebar's *Tools* section lists four rows (`Tool.allCases`). Recents show "8.8.8.8 · Whois · 2 min ago" and reopen the Whois tool (pre-fill only, no auto-start, as for the other tools).
+- **Toolbar (trailing):** **Share** (`square.and.arrow.up`, a `Menu`: *Share Summary* · *Share Full Record* · *Copy Summary*; in My IP mode it shares the My IP text) and **Refresh** (`arrow.clockwise`, My IP mode only). No Settings sheet (like BGP Map). About stays reachable from the other tools' Settings and the iPad sidebar.
+- **Titles:** large title "Whois" in My IP mode; inline title "Whois" once a custom result is shown.
+- **Keyboard (iPad, §2.4 extended):** ⌘4 opens Whois. ⌘L focuses the target. ⌘R or Return looks up. ⌘. cancels. ⌘⇧C copies the summary. ⌘⇧M (new, Whois only) returns to My IP.
+
+#### 14.2.2 Cross-tool links (all through `AppRouter`, auto-start = true)
+| From | Control | Opens |
+|---|---|---|
+| Traceroute hop (context menu, public address only) | **Whois this hop** (`person.text.rectangle`) | Whois `<hop IP>` |
+| Traceroute hop with a known ASN (context menu) | **Whois AS7922** | Whois `AS7922` |
+| Traceroute result header (public target) | icon-only capsule button `person.text.rectangle`, beside **Map in BGP**. VoiceOver: "Whois 8.8.8.8" | Whois `<target IP>` |
+| Ping result header (public target) | the same icon button beside **Map in BGP** | Whois `<target IP>` |
+| BGP AS details (`ASDetailView`, sheet and inspector) | **Whois AS3356** (new button in the actions group, between *Map prefixes of AS3356* and *Copy ASN*) | Whois `AS3356` |
+| BGP toolbar menu (`ellipsis.circle` on iPhone, the trailing menu on iPad) | **Whois 1.1.1.0/24** | Whois `<mapped prefix>` |
+| Whois result, address | **Ping** · **Traceroute** · **Map in BGP** (action row) | the tool with that address (the original host name if one was typed) |
+| Whois result, prefix | **Map in BGP** | BGP Map with the prefix |
+| Whois result, AS | **Map in BGP** | BGP Map with `AS<n>` (goes through the prefix picker, §6.1) |
+| Whois result, origin AS row | tap | Whois `AS<n>` (in place, drill-down) |
+| Whois raw record link to `stat.ripe.net/<resource>` | tap | Whois `<resource>` in place (no Safari) |
+| Whois raw record link to any other `https:` URL | tap | Safari (`openURL`), only when tapped |
+| Abuse e-mail | tap | `mailto:` (Mail), long-press → Copy |
+| My IP row | context menu | Copy · Share · Map in BGP (the routes toward your own network). No Ping/Traceroute: probing your own public address only measures your router. |
+
+Private addresses: Ping and Traceroute are allowed from the local "Private address" card (pinging your router is legitimate). Map in BGP is hidden for private and reserved space.
+
+### 14.3 iPhone layout
+
+The screen has two **modes** on one view, not two screens. The target bar is always at the top, as in every other tool.
+
+#### 14.3.1 My IP mode (default; target field empty)
+1. **Target bar** (`TargetInputBar`, mode `.bgp`): placeholder "IP, prefix, ASN or hostname", leading glyph `person.text.rectangle`, primary button **Look Up** (disabled while the field is empty or invalid, or offline). While loading it becomes **Stop** (red), as for the other tools.
+2. Section caption **YOUR PUBLIC IP**. **My IP card** (`MyIPCard`), two rows:
+   - Leading family badge (`IPv4` / `IPv6`, caption2 bold, capsule, `fill`), then the address in SF Mono 17 semibold (IPv6 at 15 pt, wraps onto two lines at most, never truncates, `minimumScaleFactor(0.8)`), then the reverse-DNS name in footnote secondary ("www.ripe.net"), or "No reverse DNS".
+   - Trailing **Copy** button (`doc.on.doc`, 44 pt hit area).
+   - The selected row (the family whose whois is shown below) has a 2 pt tint leading bar and `blue-soft` background. Tapping a row selects it.
+   - A row with no address shows the reason in secondary text: "No IPv6 on this network", "IPv4 not available (IPv6-only network)", "Checking…" (with `ProgressView`), or "Couldn't check" + a small **Retry**.
+   - Footer (caption, secondary): "As RIPEstat sees this app's connection · 9:41". A second line appears only when a VPN interface is up: "A VPN is active, so this is the VPN's address."
+3. **Whois for: `IPv4 | IPv6`** segmented control. Only shown when both families have an address. It mirrors the row selection (two ways to do the same thing; the segmented control is the accessible, obvious one).
+4. Section caption **YOUR NETWORK**. **Summary card** (`WhoisSummaryCard`, §14.3.3) for the selected address.
+5. **Records row** (card, one row): "Raw records · 1 object, 1 route ›" → pushes `RawRecordsView` (§14.10).
+6. **This device** card (`DeviceAddressesCard`) **[Confirm D7]**: "Wi-Fi · 192.168.1.23", "Cellular · 10.172.4.18", "VPN (utun4) · 10.8.0.2", and IPv6 global addresses. Under it one sentence of interpretation (rules in §14.5.6), e.g. "Your router translates 192.168.1.23 to 193.0.6.139 (NAT)." Footnote: "Read from this device. Never sent anywhere."
+7. **Look up something else:** example chips `8.8.8.8` · `2606:4700::/32` · `AS13335`, then the shared **Recent** list (`RecentsList`), as in the other tools' empty states.
+
+Pull to refresh re-checks both families (`refreshMyIP()`).
+
+#### 14.3.2 Result mode (after **Look Up**, a cross-link, or a drill-down)
+1. Target bar with the query and **Look Up**.
+2. **Context line** (footnote, one line): leading **‹ My IP** link button (returns to My IP mode, clears the field), then trailing secondary text:
+   - address: reverse DNS name if any ("dns.google"), then "· ARIN" (the RIR);
+   - host name input: "apple.com → 17.253.144.10" and, on the next line, "This is the network that hosts the address, not the domain's registration." When the host name has several addresses, an "Other addresses ▾" menu lets the user pick one (re-runs the lookup for it);
+   - prefix: "Announced by AS13335" / "Not announced in BGP";
+   - AS: "Announcing prefixes" / "Not announcing any prefix".
+3. **Summary card** (§14.3.3).
+4. **Action row** (`WhoisActions`): up to three equal-width bordered buttons with icon above label (footnote): **Ping** (`dot.radiowaves.left.and.right`), **Traceroute** (`point.topleft.down.to.point.bottomright.curvepath`), **Map in BGP** (`point.3.connected.trianglepath.dotted`). Prefixes and ASes show only Map in BGP (full width). At accessibility sizes the row becomes a vertical list.
+5. **Records card**, two rows: "Registry records · 4 objects ›" and "Routing registry (IRR) · 1 route ›". Both push `RawRecordsView`, scrolled to that section.
+6. **Source footnote:** "Source: ARIN whois via RIPEstat, updated 13:40 UTC. Registry data can be out of date."
+
+#### 14.3.3 Summary card (`WhoisSummaryCard`)
+Card (`cardBackground`, corner 12). Header, then key–value rows (`WhoisRow`): key in footnote secondary (fixed 112 pt column), value in body, selectable (`.textSelection(.enabled)`), long-press → Copy. Missing values are **omitted**, never shown as "—", except Abuse, which shows "Not listed" because its absence matters.
+
+**Header:** network → CIDR in SF Mono bold 20 ("8.8.8.0/24"; several CIDRs → the first plus "+1"); subtitle "GOGL · Google LLC" (name · organization). AS → "AS13335" bold 20; subtitle "CLOUDFLARENET · Cloudflare, Inc.". In My IP mode the header is the CIDR that contains your address.
+
+**Rows, in this order (network):**
+| Row | Example | Notes |
+|---|---|---|
+| Organization | Google LLC | Label switches to **Holder** when taken from `descr`, and to **Network operator** when taken from the origin AS's holder name; then a caption under the value: "from description" / "from AS24940". Org handle in caption2 ("GOGL", "ORG-RIEN1-RIPE"). |
+| Range | 8.8.8.0 – 8.8.8.255 | Only when it adds information (always for IPv4; for IPv6 only if not a single CIDR). |
+| Country | 🇺🇸 United States | Flag (hidden from VoiceOver) + `Locale.current.localizedString(forRegionCode:)`. Codes that are not countries (`EU`, `AP`, `ZZ`) show as "EU (region)". Caption "from RIR statistics" when not from the record. |
+| Registry | ARIN · Direct Allocation | RIR display name · status/net type (as published). An `info.circle` opens a 6-line glossary of common statuses (Allocated PA, Assigned PA, Assigned PI, Direct Allocation, Reallocated, Reassigned). |
+| Origin AS | [AS15169] Google › | ASN badge (`asn` style) + short name; tap → Whois AS. Several origins → one badge each (MOAS). "Not announced in BGP" in orange when `network-info`/`prefix-overview` has no origin. If the IRR route objects name a different origin than BGP, a caption says "Registered route object: AS8966 (RADB)". |
+| Abuse | network-abuse@google.com | Tint, tap → Mail, long-press → Copy. Several → one per line (max 3, then "+2 more" in raw). |
+| Location | United States · approx. | **[Confirm D4]** City when known ("Nuremberg, DE · approx."). `info.circle` → "Estimated by MaxMind GeoLite2 (via RIPEstat). Often wrong for mobile, VPN and cloud addresses." |
+| Registered | 28 Dec 2023 | Date only, medium style. "· changed 19 Mar 2026" appended when last-modified exists. |
+| Reverse DNS | dns.google | Only in result mode for an address (My IP shows it in the IP row). |
+
+**Rows (AS):** Organization · AS name · Country · Registry · Announcing ("Yes, in BGP now" / "No") · Abuse · Registered.
+
+**Notes strip** (inside the card, under the rows, caption, `fill` background) when present: LACNIC limited data, low confidence, partial data (§14.11). Each note has a single short sentence.
+
+#### 14.3.4 Local verdict card (private / reserved input, no request)
+`LocalAddressCard`: icon (`lock` for private, `building.2` for CGNAT, `book.closed` for documentation, `arrow.triangle.2.circlepath` for loopback, `antenna.radiowaves.left.and.right` for multicast, `nosign` for reserved), title ("Private address"), one sentence, then rows: **Range** `192.168.0.0/16` · **Type** Private use · **Standard** RFC 1918 · **Routed on the Internet** No. Actions: Ping and Traceroute (enabled for private, link-local and CGNAT; hidden for documentation, multicast, reserved), no Map. For IPv4-mapped / NAT64 / 6to4 addresses: a prominent **Look up 8.8.8.8 instead** button. Under the card, a hint row: "Your public IP is 193.0.6.139 ›" (returns to My IP), shown when My IP is known.
+
+### 14.4 iPad layout (regular width)
+
+- **Sidebar:** Tools (Ping, Traceroute, BGP Map, **Whois**), Recent, Settings.
+- **Detail toolbar row** (as BGP on iPad): "Whois" title, target field (max 300 pt), **Look Up**, then trailing Share menu and the **inspector toggle** (`sidebar.right`).
+- **Detail content: one column** (with the sidebar and the inspector open the detail column is only ~550–730 pt, too narrow for two):
+  - **Your public IP as two tiles** side by side (`IPv4 | IPv6`, each the same content as an iPhone row: badge, address, reverse DNS, Copy). They stay on top **in result mode too**, so your own IP is always one glance away. Tapping a tile shows that address's whois (My IP mode, that family selected; the selected tile gets the tint bar). Below 520 pt they stack as on iPhone.
+  - **This device** as one disclosure row ("This device · Wi-Fi 192.168.1.23 · behind NAT ›") that expands in place to the full card.
+  - **The subject:** context line, summary card, action row, routing-registry note. When the inspector is hidden and the detail column is ≥ 760 pt, the summary's key–value rows flow into two columns.
+- **Inspector (320 pt, `.inspector`):** **Raw records** for the current subject, the same content as `RawRecordsView` (§14.10). Default **shown** when the window is ≥ 1100 pt wide (landscape 11"/13"), hidden otherwise. The choice is remembered for the session. The records rows in the main column are hidden while the inspector is shown, since they would only duplicate it.
+- Slide Over / narrow Split View → compact width → the iPhone layout, state preserved (models live in `AppEnvironment`).
+
+### 14.5 Your public IP: how it is found
+
+#### 14.5.1 What is and isn't feasible on iOS
+| Approach | Verdict |
+|---|---|
+| `URLSession` → `whats-my-ip` (what BGP "Your route" does today) | Works, but returns **one** address: whichever family Happy Eyeballs picked (usually IPv6 on dual-stack networks). `URLSession` has no API to force a family. |
+| `URLSession` to `https://193.0.6.150/…` (a literal IP) | Pins the family, but TLS validation and SNI break (the certificate is for `stat.ripe.net`); needs a custom trust evaluator and a hard-coded IP. Rejected: fragile. |
+| **`Network.framework` `NWConnection` to `stat.ripe.net:443`, `NWProtocolIP.Options.version = .v4` / `.v6`, TLS on, minimal HTTP/1.1 GET** | **Chosen.** Family is pinned by the stack; SNI and certificate checks are the system's (host name endpoint); no entitlement; works on macOS too, so `swift test` can exercise it. Cost: a ~120-line HTTP/1.1 reader (status line, headers, `Content-Length` or `chunked`), unit-tested with byte fixtures. |
+| `getifaddrs` local IPv6 global address | Often equals the public IPv6 (no NAT on v6), but not always (VPN, NPTv6, several temporary addresses), and gives nothing for IPv4 behind NAT. Used only for the *This device* card, not as "your public IP". |
+| Family-specific RIPEstat host names | None exist (checked 2026-11-25: `ipv4.stat.ripe.net`, `stat-v4.ripe.net` don't resolve). `stat.ripe.net` has both `A 193.0.6.150` and `AAAA 2001:67c:2e8:22::c100:696`. |
+
+#### 14.5.2 Pinned-family fetch (`RIPEstatClient.whatsMyIP(over:)`)
+```
+NWParameters(tls: NWProtocolTLS.Options(), tcp: tcp)      // tcp.connectionTimeout = 6
+(params.defaultProtocolStack.internetProtocol as! NWProtocolIP.Options).version = .v4 | .v6
+NWConnection(host: "stat.ripe.net", port: 443, using: params)
+→ .ready: send "GET /data/whats-my-ip/data.json?sourceapp=ahmadrezaei-iptools HTTP/1.1\r\n
+                Host: stat.ripe.net\r\nUser-Agent: IPTools/1.2 (iOS; github.com/ahmadrezaei/ip-tools)\r\n
+                Accept: application/json\r\nConnection: close\r\n\r\n"
+→ receive until isComplete (cap 64 KB) → HTTP1Response.parse → RIPEstatParsing.whatsMyIP(body)
+```
+- Host and path come from the client's `baseURL`, so tests can point it elsewhere. No ALPN is offered, so the server answers HTTP/1.1.
+- Goes through the client's `ConcurrencyGate` (4 max). **Never cached.** Total timeout **8 s**.
+- **No route for the family:** the connection enters `.waiting` with a path that is unsatisfied for that family, or fails with `ENETUNREACH`/`EHOSTUNREACH`/DNS "no such record". After a 1.5 s grace in `.waiting`, it throws `PublicIPError.noRoute(version)`. Timeout → `.timeout(version)`; TLS failure → `.tls`; a non-2xx status → `.badResponse(status:)` (429 → `RIPEstatError.rateLimited`, so the busy copy is shared).
+- **Skip doomed requests:** `NetworkMonitor` exposes `supportsIPv4` / `supportsIPv6` from `NWPath`. If the path reports no IPv6, the IPv6 row shows "No IPv6 on this network" with **no request**.
+- **Fallback:** if both pinned requests fail with something other than `noRoute` (e.g. a proxy that breaks raw TLS connections), the model calls the existing `whatsMyIP()` (URLSession) once and files the answer under the family of the address it returns. The other row shows "Couldn't check".
+- **Family mismatch:** the model parses the answer with `IPAddress`. If an IPv6-pinned request comes back with an IPv4 address (a proxy or a VPN terminating the connection), the IPv6 row becomes "No IPv6 through this connection" and the address is ignored there. Identical answers for both rows are de-duplicated.
+
+#### 14.5.3 Special networks
+- **IPv6-only with NAT64/DNS64 and 464XLAT (CLAT)** (e.g. T-Mobile US): the IPv4-pinned connection goes out through the CLAT, so RIPEstat sees the carrier's NAT64 IPv4 pool address. That *is* your public IPv4, so it is shown normally. Without CLAT the IPv4 request fails with no route: "IPv4 not available (IPv6-only network)". Test with macOS Internet Sharing's "Create NAT64 Network" (§14.16 Phase 2).
+- **VPN:** RIPEstat sees the VPN exit. The footer says so when `NWPath` reports an `.other` interface in use or a `utun`/`ipsec` interface has a non-link-local address.
+- **iCloud Private Relay** only relays Safari and unencrypted HTTP; it doesn't change this app's HTTPS traffic. The info popover says: "Safari with iCloud Private Relay shows a different address. This is the address other apps and servers see."
+- **CGNAT:** RIPEstat always sees a public address. CGNAT is detected locally (§14.5.6).
+
+#### 14.5.4 Lifecycle and caching (`MyIPLocator`, actor)
+- Runs when the Whois tool **first appears** in a session, when it appears again after `NetworkMonitor.pathGeneration` changed, on pull-to-refresh / Refresh, and when the network changes **while the tool is visible** (debounced 2 s, because path updates come in bursts). **[Confirm D6]**
+- Both families run **in parallel**; each row fills in as soon as its answer arrives. Typical total: under 1 s.
+- Cached per `pathGeneration`, at most 30 minutes (same policy as `MyNetworkLocator`, §6.11.3). Failures are not cached. Memory only.
+- Then the **selected family's** address goes through the normal IP lookup (§14.8). The other family's whois loads only when selected, and is cached for the snapshot's lifetime.
+- **Default selection:** IPv4 if found, else IPv6. Rationale: it's what people mean by "my IP" in support chats and abuse reports, and it is the one that differs from the device address (NAT). **[Confirm D3]**
+- BGP "Your route" keeps its own `MyNetworkLocator` for v1.2 (no cross-module dependency). Merging both into one shared locator is a v1.3 clean-up.
+
+#### 14.5.5 Reverse DNS
+For your public addresses and for looked-up addresses, `Resolver.reverseName(for:timeout: 2s)` on the device (system resolver, already a listed destination). No RIPEstat call. Failure → "No reverse DNS".
+
+#### 14.5.6 This device (local addresses, `LocalInterfaces`)
+- `getifaddrs`, keeping interfaces that are up and running, not loopback. IPv4 addresses and IPv6 addresses that are global (2000::/3) or ULA; link-local is dropped.
+- Interface kind by BSD name: `en0` → Wi-Fi; `pdp_ip*` → Cellular; other `en*` → Wired; `utun*`/`ipsec*` **with a non-link-local address** → VPN (iOS keeps several idle `utun` interfaces with link-local addresses only; those are ignored); anything else → its name. **Verify the names on device.**
+- Interpretation line (first match wins):
+  1. Local IPv4 in 100.64.0.0/10 → "Your carrier uses CGNAT: 100.72.13.5 is shared space, and many customers share 193.0.6.139."
+  2. Local IPv4 is private and public IPv4 is known → "Your router translates 192.168.1.23 to 193.0.6.139 (NAT)."
+  3. A local IPv6 equals the public IPv6 → "Your IPv6 address is reachable as is (no NAT)."
+  4. Otherwise no line.
+- Nothing from this card is sent anywhere or exported unless the user copies it.
+
+### 14.6 Input handling
+
+Reuses `TargetInputBar` with `mode: .bgp` (IP, prefix, ASN, host name; the invalid-input footnote is already "Not a valid IP address, prefix, AS number or hostname") and `TargetParser.parse(_, mode: .bgp)`. Trimming, URL stripping, brackets and `%zone` work as everywhere else.
+
+| Input | Example | Handling |
+|---|---|---|
+| IPv4 / IPv6 | `8.8.8.8`, `2001:4860:4860::8888` | Special-purpose check (below), then the address plan (§14.8). |
+| Prefix | `1.1.1.0/24`, `2001:4860::/32` | Check whether the prefix lies inside a special range, then the prefix plan. Host bits set (`1.1.1.7/24`) are normalised to the network (`1.1.1.0/24`) and the context line says "Showing 1.1.1.0/24". |
+| ASN | `AS13335`, `as13335`, `13335` | Reserved-ASN check, then the AS plan. |
+| Host name | `apple.com` | `Resolver.resolve(_, preference: settings.addressPreference)`, then the address plan for the resolved address. Context line explains it's the hosting network, not the domain's registration. Resolve failure → the §4.2 "Couldn't Resolve" copy. |
+
+**Special-purpose IPv4** (IANA registry; new `IPAddress.specialPurpose`): `0.0.0.0/8` This network (RFC 791) · `10.0.0.0/8`, `172.16.0.0/12`, `192.168.0.0/16` Private use (RFC 1918) · `100.64.0.0/10` Shared address space, CGNAT (RFC 6598) · `127.0.0.0/8` Loopback (RFC 1122) · `169.254.0.0/16` Link-local (RFC 3927) · `192.0.0.0/24` IETF protocol assignments (RFC 6890) · `192.0.2.0/24`, `198.51.100.0/24`, `203.0.113.0/24` Documentation (RFC 5737) · `192.88.99.0/24` 6to4 relay anycast, deprecated (RFC 7526) · `198.18.0.0/15` Benchmarking (RFC 2544) · `224.0.0.0/4` Multicast (RFC 5771) · `240.0.0.0/4` Reserved (RFC 1112) · `255.255.255.255/32` Limited broadcast (RFC 919).
+
+**Special-purpose IPv6:** `::/128` Unspecified · `::1/128` Loopback · `::ffff:0:0/96` IPv4-mapped (offer the embedded IPv4) · `64:ff9b::/96` NAT64 well-known prefix (RFC 6052, offer the embedded IPv4) · `100::/64` Discard (RFC 6666) · `2001::/32` Teredo (RFC 4380) · `2001:db8::/32` and `3fff::/20` Documentation (RFC 3849, RFC 9637) · `2002::/16` 6to4 (RFC 3056, offer the embedded IPv4) · `fc00::/7` Unique local (RFC 4193) · `fe80::/10` Link-local (RFC 4291) · `ff00::/8` Multicast (RFC 4291).
+
+**Reserved ASNs** (new `ReservedASN.lookup`): 0 (RFC 7607) · 23456 AS_TRANS (RFC 6793) · 64496–64511 and 65536–65551 Documentation (RFC 5398) · 64512–65534 and 4200000000–4294967294 Private use (RFC 6996) · 65535 and 4294967295 Reserved (RFC 7300) · 65552–131071 Reserved by IANA.
+
+These tables are new and separate from `IPAddress.isPubliclyRoutable` / `scopeLabel`, whose behaviour (traceroute "Private" badges, BGP rejection) is unchanged in v1.2. Unifying them is a follow-up.
+
+Copy for the local card: "**192.168.1.1** is in 192.168.0.0/16, a private range (RFC 1918). It's only used inside local networks, so no registry has a whois record for it." CGNAT: "…shared address space (RFC 6598). Carriers use it inside their networks for CGNAT; it never appears on the public Internet." Documentation: "…reserved for documentation and examples (RFC 5737). It is never used on real networks." ASN: "AS64512 is a private-use AS number (RFC 6996). Networks use it internally; it has no registry record."
+
+### 14.7 Data source decision
+
+**Recommendation: RIPEstat only.** **[Confirm D2]**
+
+| | RIPEstat (`whois` + helpers) | RDAP (`rdap.org` bootstrap → RIR servers) |
+|---|---|---|
+| Privacy story | Unchanged: "only RIPEstat is contacted" | Adds `rdap.org` (a third party, not an RIR) and five RIR hosts, plus redirects. PRIVACY.md, About and README grow a list. |
+| Coverage | ARIN, RIPE NCC, APNIC, AFRINIC raw objects. **LACNIC: no records** (only IRR route objects). Verified 2026-11-25 for 200.160.2.3, 200.160.0.0/20, 2001:12ff::1 and AS22548. | All five, structured. |
+| Org name, RIPE/APNIC/AFRINIC | Only the `org:` handle (RIPEstat returns the inetnum/aut-num object, not the organisation object). | Full entity with name. |
+| Abuse contact | `abuse-contact-finder` (RIPEstat queries RDAP server-side): worked for ARIN, RIPE, APNIC, IPv6, AS; failed once for LACNIC with a backend error. | Direct. |
+| ARIN IPv6 | A bare address fails ("No match found for + ! 2001 = 4860:4860::8888." — RIPEstat mis-splits the key on the colon). The covering prefix works. | Works. |
+| Engineering | One client, one cache, one etiquette, fixtures already in place. | New client, bootstrap, redirects, five server behaviours, rate limits per RIR. |
+
+The gaps have fallbacks (§14.9): LACNIC → AS holder name, RIR statistics country, IRR origin, `abuse-contact-finder`; RIPE-style org → `descr`, then the origin AS's holder name, labelled as such; ARIN IPv6 → retry with the `network-info` prefix. **RDAP stays a possible v1.3 opt-in** ("Fetch the full record from the registry (RDAP)", off by default), if users ask for LACNIC detail.
+
+**Geolocation [Confirm D4]:** recommended **on**, through RIPEstat `maxmind-geo-lite` (so still RIPEstat-only), as one "approx." row with the caveat popover, never in the export, never on a map. Attribution in About: "Location data: GeoLite2 by MaxMind, via RIPEstat." If the owner prefers to avoid location entirely, drop the row and the call; nothing else changes.
+
+### 14.8 Request plans
+
+All calls go through `RIPEstatClient` (4 concurrent max, 5-min URL cache except `whats-my-ip`, `sourceapp` on every call). Every helper call may fail on its own without failing the lookup.
+
+**Address `a`** (public):
+1. In parallel: `whois?resource=a` ‖ `network-info?resource=a` ‖ `abuse-contact-finder?resource=a` ‖ `rir-stats-country?resource=a`. On device, in parallel: `Resolver.reverseName(a)`.
+2. Then:
+   - **ARIN IPv6 retry:** if the whois response is "no match" (§14.9.1) and `network-info` returned a prefix, run `whois?resource=<prefix>` once and use it.
+   - `as-names` for the BGP origins ∪ IRR origins (one bulk call, names cache).
+   - `maxmind-geo-lite?resource=a` (only if D4 is approved).
+3. The summary card appears when step 1 is complete (≈ 1–2 s). Names and location fade in after step 2.
+
+**Prefix `p`:** `whois?resource=p` ‖ `prefix-overview?resource=p` ‖ `abuse-contact-finder?resource=p` ‖ `rir-stats-country?resource=p` → `as-names` (origins without holders, IRR origins). No geolocation, no reverse DNS.
+
+**AS `n`:** `whois?resource=AS<n>` ‖ `as-overview?resource=AS<n>` ‖ `abuse-contact-finder?resource=AS<n>` ‖ `rir-stats-country?resource=AS<n>` → `as-names([n])` only if `as-overview` gave no holder.
+
+**Host name:** resolve on device → the address plan.
+
+**My IP:** `whats-my-ip` pinned v4 ‖ pinned v6 (§14.5.2) → the address plan for the selected family. Cost of opening the tab cold: 2 + 4 + 1–2 = 7–8 requests, then nothing for 30 min on the same network. Switching to the other family costs 5–6 more, once.
+
+**Failure policy:** if `whois` **and** the BGP call (`network-info`/`prefix-overview`/`as-overview`) both fail, the lookup fails (§14.11). If only `whois` fails, show the card with the BGP/abuse/country facts and the note "Registry record unavailable right now." + **Try Again**. Any other single failure only removes its rows (and adds a `missing(part)` note in raw view, not on the card).
+
+**Cancellation:** a new Look Up, Stop, ⌘., leaving to My IP, or `scenePhase == .background` cancels the task group. Results already shown stay.
+
+**Recents:** recorded with `Tool.whois` when a lookup *starts successfully* (after parse and, for host names, after resolution), same rule as §3.1. My IP fetches never record.
+
+### 14.9 Parsing and normalisation (`WhoisSummarizer`, pure, in RIPEstat)
+
+#### 14.9.1 The raw response
+`data.records`: array of objects; each object is an array of `{key, value, comment, details_link}`. `data.irr_records`: same shape. `data.authorities`: e.g. `["arin"]`. `data.resource`, `data.query_time`. `messages` may contain `info` ("IP address has been converted to a prefix", ignored) and `warning` ("Authoritative RIR could not be identified. Best match is returned!" → `lowConfidence`).
+
+Cleaning: trim every key and value (ARIN values end with a space). Keep empty values (they are paragraph breaks in `remarks`/`Comment`). Keep repeated keys in order. `details_link` → `URL` if it parses and has scheme `https`, `http` or `mailto`.
+
+**No-match marker:** a record whose first key starts with `No match found` (e.g. key `"No match found for + ! 2001"`, value `"4860:4860::8888."`), or starts with `%`, is a marker, not an object. A response whose only resource records are markers is `isNoMatch`.
+
+#### 14.9.2 Classifying records (by first key)
+| First key | Class |
+|---|---|
+| `NetRange`, `inetnum`, `inet6num` | network object |
+| `ASNumber`, `aut-num` | AS object |
+| `OrgName` | organisation (ARIN) |
+| `OrgAbuseHandle`, `RAbuseHandle` | abuse contact (ARIN; `R…` = resource-level) |
+| `OrgTechHandle`, `OrgNOCHandle`, `OrgRoutingHandle`, `RTechHandle`, `RNOCHandle` | other contact (ARIN) |
+| `route`, `route6` (in `irr_records`) | IRR route object |
+| anything else | other (raw view only) |
+
+**Most specific network object:** ARIN often returns the parent chain (e.g. `ARIN-004 2001:4800::/23` then `GOOGLE-IPV6 2001:4860::/32`). Pick the object with the **longest prefix length** (from its CIDR, or the smallest range when only a range is given); ties → the later one. Same rule if a prefix query returns several.
+
+**IRR records:** de-duplicate identical objects (RIPE often returns the same route twice, once with a privacy banner). Origins = distinct `origin` values as `UInt32`.
+
+#### 14.9.3 Field mapping per RIR
+| Summary field | ARIN | RIPE NCC / APNIC / AFRINIC (RPSL) | LACNIC (no records) | Fallback (any RIR) |
+|---|---|---|---|---|
+| CIDRs | `CIDR` (comma-separated list possible) | `inetnum`/`inet6num` if it is a CIDR; else computed from the range (minimal CIDR cover) | — | routed prefix from `network-info` / `prefix-overview` |
+| Range | `NetRange` ("8.8.8.0 - 8.8.8.255") | `inetnum` if it is a range; else computed from the CIDR | — | from the routed prefix |
+| Name | `NetName` | `netname` | — | — |
+| Handle | `NetHandle` | (none; the inetnum is the key) | — | — |
+| Descriptions | — | `descr` (all lines, max 3 on the card) | — | — |
+| Organization (registry) | `Organization` "Google LLC (GOGL)" → name "Google LLC", handle "GOGL"; or `Customer` (reassignments, same format); else `OrgName` of the first org object | `org-name` if present; `owner` if present | — | **Holder** = first `descr` line that is not the netname and not a postal-looking line (contains a digit-only token of ≥ 4 digits or ends in a country name); then **Network operator** = `as-names` holder of the primary origin AS, with the handle part removed (`ASName` rule 1 only, legal suffix kept: "Hetzner Online GmbH") |
+| Org handle | parenthetical of `Organization`/`Customer`, or `OrgId` | `org` | — | — |
+| Country | `Country` of the organisation object whose `OrgId` equals the org handle (else the first org object) | `country` | — | `rir-stats-country` first `located_resources[].location` (caption "from RIR statistics") |
+| RIR | `source` = ARIN | `source` (RIPE, RIPE-NONAUTH → RIPE NCC; APNIC; AFRINIC) | `authorities[0]` = lacnic | `abuse-contact-finder.authoritative_rir` |
+| Status | `NetType` | `status` | — | — |
+| Parent | `Parent` | `parent` (AFRINIC) | — | — |
+| Origin AS (BGP) | — | — | — | `network-info.asns` / `prefix-overview.asns` (always BGP; never from whois) |
+| Registered origins | `OriginAS` (often empty) | — | — | IRR `origin` values |
+| Abuse e-mails | (fallback) `OrgAbuseEmail`, then `RAbuseEmail` | (fallback) `abuse-mailbox` | — | **Primary for all:** `abuse-contact-finder.abuse_contacts`. Last resort: first e-mail address in a `remarks`/`Comment`/`descr` line that contains "abuse" (APNIC 1.1.1.0/24: `resolver-abuse@cloudflare.com`) |
+| Registered | `RegDate` (yyyy-MM-dd) | `created` (ISO 8601 Z) | — | — |
+| Last modified | `Updated` | `last-modified` | — | — |
+| Contacts (handles) | `OrgTechHandle`, `OrgNOCHandle`, `OrgAbuseHandle` | `admin-c`, `tech-c`, `abuse-c`, `mnt-by` | — | raw view only |
+| **AS objects** | `ASNumber`, `ASName`, `ASHandle`, `RegDate`, `OrgName`/`Country` from the org object | `aut-num`, `as-name`, `descr`, `org`, `country`, `created`, `last-modified` | — | holder from `as-overview` / `as-names`; country from RIR stats; announcing from `as-overview.announced` |
+
+**RIR display names:** AFRINIC, APNIC, ARIN, LACNIC, RIPE NCC.
+
+**Not-found rule:** the summary is *empty* (→ "No registry record", §14.11) when there is no usable network/AS object (none, or only no-match markers), no IRR record, no routed prefix and no RIR-statistics country. **IANA catch-all rule:** a chosen network object with prefix length ≤ 8 (IPv4) or ≤ 12 (IPv6) **and** the low-confidence warning (e.g. `IANA-BLK 0.0.0.0/0`, returned for 10.0.0.1) counts as no object.
+
+**Notes:** `registryRecordsUnavailable(rir)` (LACNIC, or any RIR with only markers after the retry) · `lowConfidence` · `notAnnounced` (registered but no BGP origin) · `missing(part)` for each helper call that failed.
+
+#### 14.9.4 Golden expectations (from fixtures captured 2026-11-25)
+| Fixture | Expected summary |
+|---|---|
+| `whois_8.8.8.8` + `network-info_8.8.8.8` + `abuse_8.8.8.8` | CIDR `8.8.8.0/24`, range `8.8.8.0 - 8.8.8.255`, name GOGL, handle NET-8-8-8-0-2, org "Google LLC" (registry, handle GOGL), country US (registry), ARIN, status "Direct Allocation", parent "NET8 (NET-8-0-0-0-0)", BGP origin 15169, registered origins [15169] (RADB), abuse [network-abuse@google.com], registered 2023-12-28 |
+| `whois_2001-4860-4860--8888` (no-match) → retry `whois_2001-4860--32` | Retry happens; chosen object GOOGLE-IPV6 `2001:4860::/32` (not ARIN-004 /23), org Google LLC, country US from org object GOGL (not ARIN's), abuse from finder [arin-contact@google.com, network-abuse@google.com] |
+| `whois_193.0.6.139` | CIDR `193.0.0.0/21`, name RIPE-NCC, descr ["RIPE Network Coordination Centre", "Amsterdam, Netherlands"], org **Holder** "RIPE Network Coordination Centre" (from description), handle ORG-RIEN1-RIPE, NL, RIPE NCC, "ASSIGNED PA", registered 2003-03-17, changed 2026-03-19, registered origins [3333] (duplicate IRR collapsed), abuse [abuse@ripe.net] from finder |
+| `whois_1.1.1.1` | CIDR `1.1.1.0/24`, APNIC-LABS, Holder "APNIC and Cloudflare DNS Resolver project", AU, APNIC, "ASSIGNED PORTABLE", changed 2023-04-26, registered origins [13335]; finder → [helpdesk@apnic.net]; with the finder failed → remarks fallback [resolver-abuse@cloudflare.com] |
+| `whois_196.216.2.1` | CIDR `196.216.2.0/23`, AFRINIC, Holder "AfriNIC - Internal Use", ZA, AFRINIC, "ASSIGNED PI", parent "196.0.0.0 - 196.255.255.255", registered origins [33764] |
+| `whois_200.160.2.3` (LACNIC, records empty) + `network-info` + `rir-stats-country` + `as-names` | note `registryRecordsUnavailable(.lacnic)`, CIDR `200.160.0.0/20` (from BGP), **Network operator** "Nucleo de Inf. e Coord. do Ponto BR - NIC.BR" (from AS22548), country BR (from RIR statistics), LACNIC, origin 22548, registered origins [22548] |
+| `whois_91.107.240.242` | CIDR `91.107.240.0/20`, CLOUD-NBG1, no descr → **Network operator** "Hetzner Online GmbH" (from AS24940), DE, RIPE NCC, "ASSIGNED PA" |
+| `whois_10.0.0.1` | IANA catch-all rule → empty (never requested by the app, which rejects 10/8 locally; the test guards the rule) |
+| `whois_AS13335` | AS, name CLOUDFLARENET, org "Cloudflare, Inc." (OrgName), US, ARIN, registered 2010-07-14, abuse [abuse@cloudflare.com] |
+| `whois_AS3333` | AS, name RIPE-NCC-AS, Holder "Reseaux IP Europeens Network Coordination Centre (RIPE NCC)", RIPE NCC; the 80+ `remarks`/`import`/`export` lines stay raw-only |
+| `whois_AS22548` (empty) | note LACNIC, org from `as-overview`/`as-names` holder, country from RIR stats |
+| `whois_ORG-HOA1-RIPE` (HTTP 400, "unsupported resource type") | `RIPEstatError.api` with the message (guards the error path) |
+
+### 14.10 Raw records view (`RawRecordsView`)
+
+- Pushed on iPhone (title "Raw Records", inline; back button shows the query), inspector on iPad. Toolbar: Share (full record text) and Copy.
+- **Section "Registry records"** (header: "ARIN · 4 objects" / "RIPE NCC · 1 object"), one card per object. **Section "Routing registry (IRR)"**, one card per de-duplicated route object, header "route 8.8.8.0/24 · RADB". Markers (no-match) appear as a single grey line "ARIN had no match for the address; showing the covering prefix 2001:4860::/32."
+- **Object card header:** a friendly class name plus the primary value: "Network · 8.8.8.0/24" (NetRange/inetnum/inet6num), "AS · 13335", "Organization · Google LLC", "Abuse contact · ABUSE5250-ARIN", "Technical contact", "NOC contact", "Routing contact". Unknown classes use the first key. The **object chosen for the summary** gets a "Used in summary" tag.
+- **Rows:** key in SF Mono footnote secondary (fixed 128 pt column, wraps), value in SF Mono footnote (selectable). Rows stack (key above value) at accessibility sizes.
+- **Paragraph keys** (`remarks`, `Comment`, `descr` with > 3 lines): consecutive lines are joined into one block, blank values become line breaks, ASCII banners (lines made only of `+ - * = | #` and spaces) are kept as they are. Blocks over 6 lines collapse with "Show 34 more lines".
+- **Links** (`details_link`): `https://stat.ripe.net/<resource>` → in-app Whois of that resource. Other `https`/`http` → Safari after a tap. `mailto:` → Mail. Plain e-mail addresses in values are detected (`NSDataDetector`) and become `mailto:` links.
+- Long-press a row → *Copy Value* · *Copy "key: value"*. Header menu → *Copy Object*.
+- Personal data (names, phone numbers in ARIN POCs; RIPE strips personal data at source) is shown exactly as RIPEstat returns it publicly. Nothing is stored.
+
+### 14.11 States
+
+**My IP**
+| State | UI |
+|---|---|
+| Checking | Both rows "Checking…" with a small `ProgressView`; summary card skeleton (`redacted(.placeholder)`) |
+| Both found | As §14.3.1; IPv4 selected |
+| IPv4 only | IPv6 row: "No IPv6 on this network" (secondary, `network.slash` glyph). No segmented control |
+| IPv6 only | IPv4 row: "IPv4 not available (IPv6-only network)". IPv6 selected |
+| Mismatch (proxy/VPN) | IPv6 row: "No IPv6 through this connection" |
+| One failed | That row: "Couldn't check" + **Retry**. The other works normally |
+| Both failed, online | `ErrorStateView`: "Couldn't Find Your IP" · "RIPEstat didn't answer. Check your connection and try again." + Try Again. *This device* card still shown |
+| RIPEstat busy (429/5xx) | "RIPEstat is busy. Try again in a moment." + Try Again (shared copy with §6.9) |
+| Offline | Offline banner under the bar; rows "Connect to the Internet to see your public IP"; *This device* card still shown (Wi-Fi without Internet still has a local address); Look Up disabled |
+| Network changed | Rows switch to "Checking…" automatically (debounced 2 s) |
+| Whois of own IP failed | My IP rows stay; summary area shows the lookup error inline with Try Again |
+
+**Lookup**
+| State | UI |
+|---|---|
+| Resolving (host name) | Context line "Resolving apple.com…" with `ProgressView`; Stop available |
+| Loading | Context line "Looking up 8.8.8.8 at RIPEstat…"; summary card skeleton; Stop |
+| Loaded | §14.3.2 |
+| Partial (whois failed, BGP worked) | Card with available rows + note "Registry record unavailable right now." + Try Again |
+| LACNIC (no records) | Card with BGP/RIR-statistics rows + note "LACNIC doesn't share whois records through RIPEstat. Showing BGP and registry statistics." + "Open in RIPEstat" (Safari) |
+| Low confidence | Note "RIPEstat couldn't identify the responsible registry; this is the best match." |
+| Not announced | Origin row in orange "Not announced in BGP"; everything else normal (common for allocated but unused space) |
+| Not found | `ContentUnavailableView("No Registry Record", systemImage: "questionmark.folder", description: "No registry has a record for 2001:db9::1. It may be unallocated.")` |
+| Private / reserved / CGNAT / documentation / special ASN | Local verdict card (§14.3.4), no request |
+| Mapped / NAT64 / 6to4 IPv6 | Local card + **Look up 8.8.8.8 instead** |
+| Invalid input | Red footnote under the field (existing `TargetInputBar` behaviour); Look Up disabled |
+| Resolve failed | §4.2 copy "Couldn't Resolve apple.cmo" + "Check the spelling or your DNS." |
+| Rate-limited / 5xx (RIPEstat returned an nginx "502 Bad Gateway" HTML page on 2026-11-25) | "RIPEstat is busy. Try again in a moment." + Try Again |
+| Timeout (> 30 s) | "RIPEstat didn't respond." + Try Again |
+| Offline | Offline banner, Look Up disabled; a result already on screen stays |
+| Backgrounded | Lookup cancelled; on return, "Stopped — app moved to background" + Try Again (only if nothing was shown yet) |
+
+`WhoisFailure` mirrors `BGPFailure` (kinds `busy`, `timeout`, `offline`, `notFound`, `unresolved`, `invalid`, `other`) with the same titles, symbols and actions where they overlap.
+
+### 14.12 Export text
+
+Footer line and date format as the other tools (§4.6). **Share Summary** (also ⌘⇧C):
+```
+WHOIS 8.8.8.8 (dns.google)
+Network     8.8.8.0/24  (8.8.8.0 - 8.8.8.255)
+Name        GOGL  (NET-8-8-8-0-2)
+Org         Google LLC  (GOGL)
+Country     US
+Registry    ARIN · Direct Allocation
+Origin AS   AS15169 Google LLC  (BGP)
+Abuse       network-abuse@google.com
+Registered  2023-12-28
+Source: ARIN whois via RIPEstat, 2026-11-25 13:40 UTC
+— IP Tools for iOS, 2026-11-25 13:52 UTC
+```
+Provenance is kept in the text: `Org         Hetzner Online GmbH  (network operator, from AS24940)`, `Country     BR  (RIR statistics)`. A LACNIC lookup adds `Note: LACNIC doesn't share whois records through RIPEstat.` **The location row is never exported.**
+
+**Share Full Record** = the summary, a blank line, then every object as `key:  value` lines (keys padded to the longest key in the object, as `whois` CLI output), objects separated by blank lines, then `--- routing registry (IRR) ---` and the route objects, then the footer.
+
+**My IP** (toolbar Share in My IP mode):
+```
+My public IP — 2026-11-25 09:41 UTC
+IPv4  193.0.6.139                 www.ripe.net
+IPv6  2001:67c:2e8:22::c100:696
+Network  193.0.0.0/21 · RIPE-NCC · AS3333 RIPE NCC · NL · RIPE NCC
+Abuse    abuse@ripe.net
+— IP Tools for iOS
+```
+Local device addresses are not included (copy them from the card if needed).
+
+### 14.13 Accessibility
+
+- **Order and headings:** "Your public IP", "Your network", "This device" and the raw-record object headers are `.isHeader`, so the headings rotor jumps between them.
+- **Address rows:** one element each. Label: "IPv4 address, 193.0.6.139, www.ripe.net. Selected for whois." Actions (`accessibilityActions`): *Copy*, *Show whois* (when not selected), *Map in BGP*. IPv6 addresses get a speakable label built by `IPSpeech.label(_:)`: groups separated by pauses, `::` spoken as "double colon", hex letters spelled ("2001, 67c, 2e8, 22, double colon, c100, 696" with `speechSpellsOutCharacters` on letter groups).
+- **Summary rows:** each row is one element "Organization, Google LLC" (`LabeledContent` semantics), provenance appended ("Network operator, Hetzner Online GmbH, from AS 24940"). ASNs spoken as "AS 15169" (as §6.11.10). The flag emoji is hidden; the country name is spoken.
+- **Announcements:** when a lookup finishes, `.announcement` "Whois loaded: Google LLC, ARIN, United States". When My IP finishes: "Your IPv4 address is 193.0.6.139. IPv6 address found." Failures announce their title.
+- **Dynamic Type up to AX5:** key–value rows switch to stacked layout from `.accessibility1`; the action row becomes a vertical list; IPv6 addresses wrap (never truncate).
+- **Colour is never the only signal:** the selected address row has a tint bar *and* "Selected" in its label; "Not announced" is orange *and* says so; notes have text.
+- **Raw view:** monospaced text is selectable; long paragraphs collapse with an explicit button ("Show 34 more lines", announced count); links have the hint "Opens in Safari" / "Looks up 193.0.0.0/21".
+- **Keyboard:** everything is reachable with Tab; shortcuts in §14.2.1.
+- **Reduce Motion:** skeleton shimmer off; rows appear without slide.
+
+### 14.14 Privacy and store text
+
+**App Privacy label: stays "Data Not Collected".** Lookups are sent to RIPEstat to serve the request the user made (the same basis as BGP Map today); the developer receives nothing; no identifiers; your public IP is kept in memory only. `PrivacyInfo.xcprivacy` is unchanged (`getifaddrs` and `NWConnection` are not required-reason APIs). `Info.plist` is unchanged: no new permission (reading local interface addresses and connecting to a public host don't trigger the Local Network prompt). No ATS exception (HTTPS only).
+
+**PRIVACY.md, exact changes**
+- Item 2 becomes: "**The system DNS resolver**, to turn host names into addresses and, in Whois, to look up the host name of an address."
+- Item 3: append after the *your path* sentences:
+  > **Whois and My IP.** The IP address, prefix or AS number you look up in Whois is sent to RIPEstat. If you enter a host name, it is resolved on your device and only the resulting address is sent. **My IP** asks RIPEstat which public address your connection uses, once over IPv4 and once over IPv6, and then looks that address up the same way. RIPEstat already sees that address on every request. The app keeps it in memory only, forgets it when your network changes, and never sends it anywhere else. The approximate location shown for an address is MaxMind GeoLite2 data delivered by RIPEstat; the app doesn't use your device's location. Links inside whois records, such as a registry web page or an e-mail address, open in Safari or Mail only when you tap them.
+- New section after *Stored on your device*:
+  > ## Your device's local addresses
+  > The Whois tab shows this device's own network addresses (for example its Wi-Fi address) so you can compare them with your public IP. They are read on the device and are never sent anywhere.
+- *Stored on your device*, first sentence becomes: "Recent targets (up to 20, including Whois lookups) and your settings are kept locally in `UserDefaults`."
+
+(If D4 is declined, drop the location sentence. If D7 is declined, drop the new section.)
+
+**About screen** (`AboutSections`), one new footnote under the *Your path* line:
+"My IP & Whois: your public IP and the addresses, prefixes and AS numbers you look up are sent to RIPEstat. Your device's local addresses never leave it."
+*Data sources* footer becomes: "BGP and whois data: RIPE NCC RIPEstat, built from RIPE RIS route collectors and the AFRINIC, APNIC, ARIN, LACNIC and RIPE NCC registries. Location data: GeoLite2 by MaxMind, via RIPEstat."
+
+**README.md, exact changes**
+- Title: "IP Tools: Ping, Traceroute, Whois & BGP Map for iPhone and iPad". Intro: "…**ping** any IP or hostname, **traceroute** hop by hop with ASN lookup, see **your public IP and whois** for any IP, prefix or AS, and explore a **visual BGP map**…".
+- "**IP Tools** does three things" → "does four things". Table: new row "🔎 **Whois & My IP** | Your public IPv4 and IPv6 address and the network behind it. Whois for any IP, prefix or AS number across all five RIRs: organization, country, origin AS, abuse contact, plus the raw registry records."
+- New features section "### Whois & My IP": your public IPv4 and IPv6 as the Internet sees them (both families checked separately), reverse DNS, your local addresses and NAT/CGNAT hint; whois for IPs, prefixes, AS numbers and host names; one clean summary across ARIN, RIPE NCC, APNIC, AFRINIC and LACNIC with the raw records; private, CGNAT and documentation ranges explained offline; one tap from a traceroute hop or a BGP network; share as text.
+- *Made for iPhone and iPad*: "iPhone: four tabs"; "⌘1–4 to switch tools".
+- *Privacy*: replace "Only BGP Map queries and the ASN lookup…" with "Only BGP Map, Whois and the ASN lookup for public traceroute hops contact **RIPEstat**…", and add "**My IP** asks RIPEstat for your public IPv4 and IPv6 address; it is kept in memory only. Your local addresses never leave the device."
+- *Project structure*: "Sources/PingFeature, TraceFeature, BGPFeature, WhoisFeature   The four tools".
+- FAQ, two new entries: "**Can it show my IP address?** Yes. The Whois tab shows your public IPv4 and IPv6 address, checked separately, the network and provider behind them, and your device's local addresses." · "**Does it look up domain names?** It looks up the network that hosts a domain's address. Domain registration whois (who registered example.com) isn't supported."
+- *Contributing*: "keep the app focused on its four tools".
+- Keywords footer: add "what is my IP, my IP address, IPv6 address, whois lookup, IP whois, ASN whois, abuse contact lookup".
+
+**App Store metadata (§8 updates) [Confirm D8, D9]**
+- **Name (27/30):** unchanged, `IP Tools: Ping & Traceroute`. Renaming would cost the "traceroute" title weight and the brand recognition of a shipped app.
+- **Subtitle (27/30):** `Whois, BGP Map & ASN Lookup` (was `BGP Map, AS Path & ASN Lookup`). "whois" gets subtitle weight and pairs with "lookup" ("whois lookup", "ip lookup", "asn lookup"); "path" moves to keywords. Alternative: `My IP, Whois & BGP Map` (22/30), which loses "asn lookup".
+- **Keywords (100/100):** `my,address,network,looking,glass,tracert,icmp,latency,ipv6,prefix,route,path,hop,jitter,ripe,isp,dns`
+  Added: `my` ("my ip", "what is my ip"), `address` ("ip address"), `path` (moved from the subtitle). Dropped: `mtr` (the app has no mtr mode) and `peering` (lowest search value). No word repeats the name or subtitle (ip, tools, ping, traceroute, whois, bgp, map, asn, lookup).
+- **Promotional text (162/170):** `New: see your public IPv4 and IPv6 address and the whois record of any IP, prefix or AS. Plus ping, traceroute and a live BGP map. Free, open source, no tracking.`
+- **Description:** first sentence becomes "IP Tools is a fast, no-nonsense network toolkit for iPhone and iPad: ping, traceroute, whois and a visual BGP map that shows how the Internet reaches any IP address, prefix or ASN." New section after TRACEROUTE:
+  ```
+  MY IP & WHOIS
+  • See your public IPv4 and IPv6 address, exactly as the Internet sees it
+  • Who runs your network: provider, AS number, country and abuse contact
+  • Whois any IP address, prefix or AS number, across ARIN, RIPE NCC, APNIC, AFRINIC and LACNIC
+  • A clean summary card plus the full raw registry records
+  • Private, CGNAT and documentation ranges explained instantly, offline
+  • Whois any traceroute hop or BGP network with one tap
+  ```
+  TRACEROUTE gains "• Ping, map or whois any hop with one tap" (replacing "Ping or map any hop with one tap"). PRIVATE AND OPEN SOURCE: "• BGP, whois and ASN data comes from the public RIPEstat API by the RIPE NCC" and "• Your public IP is looked up only when you open Whois, and never stored".
+- **Screenshots:** add "My IP & whois" ("Your IP and who runs it") as **#2** on 6.9", 6.3" and 13" iPad (whois is the highest-volume search term of the set). **Screenshot mode must not show the developer's real IP:** `-screenshotTool whois` makes `AppEnvironment` inject fixed My IP answers (193.0.6.139 / 2001:67c:2e8:22::c100:696, RIPE NCC, verified data) instead of calling `whats-my-ip`.
+
+### 14.15 Architecture
+
+#### 14.15.1 Modules
+```
+                 NetCore ─────────────┐        RIPEstat              BGPGraph
+   (+ SpecialPurpose, LocalInterfaces)│   (+ whois, abuse, country,
+                                      │      geo, pinned whats-my-ip,
+                                      │      WhoisSummarizer)
+                 SharedUI (+ Tool.whois, NetworkMonitor.supportsIPv4/6, interface kind)
+        ┌────────────┬───────────────┬──────────────┬──────────────────┐
+   PingFeature  TraceFeature     BGPFeature    WhoisFeature (new: NetCore, RIPEstat, SharedUI)
+        └────────────┴───────────────┴──────────────┴──────────────────┘
+                                   AppShell (+ WhoisFeature)
+```
+WhoisFeature must not depend on BGPFeature, TraceFeature or PingFeature; it reaches them only through `AppRouter`. Nothing depends on WhoisFeature except AppShell (and FeatureTests).
+
+**`Package.swift` (coordinator, Step 0):**
+```swift
+.target(name: "WhoisFeature", dependencies: ["NetCore", "RIPEstat", "SharedUI"]),
+// AppShell dependencies += "WhoisFeature"
+// FeatureTests dependencies += "WhoisFeature"
+```
+
+#### 14.15.2 NetCore (new files only: `SpecialPurpose.swift`, `LocalInterfaces.swift`)
+```swift
+public struct SpecialPurposeRange: Hashable, Sendable {
+    public enum Kind: Hashable, Sendable {
+        case thisNetwork, privateUse, sharedCGNAT, loopback, linkLocal, protocolAssignments, documentation,
+             relayAnycast, benchmarking, multicast, reserved, broadcast,
+             unspecified, ipv4Mapped, nat64, discard, teredo, sixToFour, uniqueLocal
+    }
+    public let network: IPAddress
+    public let length: Int
+    public let kind: Kind
+    public let name: String            // "Private use", "Shared address space (CGNAT)"
+    public let rfc: String             // "RFC 1918"
+    public var cidr: String { get }    // "192.168.0.0/16"
+    public var allowsProbing: Bool { get }   // ping/trace sensible: private, CGNAT, link-local, loopback, ULA
+    public static let ipv4: [SpecialPurposeRange]
+    public static let ipv6: [SpecialPurposeRange]
+    /// The range containing the whole prefix `network/length`, if any (most specific first).
+    public static func containing(_ network: IPAddress, length: Int) -> SpecialPurposeRange?
+}
+public extension IPAddress {
+    var specialPurpose: SpecialPurposeRange? { get }   // == SpecialPurposeRange.containing(self, length: 32|128)
+    var embeddedIPv4: IPAddress? { get }               // ::ffff:a.b.c.d, 64:ff9b::a.b.c.d, 2002:aabb:ccdd::/48
+    /// The network address of `self/length` (host bits cleared).
+    func masked(to length: Int) -> IPAddress
+}
+public struct ReservedASN: Hashable, Sendable {
+    public let range: ClosedRange<UInt32>
+    public let name: String            // "Private use", "Documentation", "AS_TRANS"
+    public let rfc: String
+    public static func lookup(_ asn: UInt32) -> ReservedASN?
+}
+public struct LocalAddress: Hashable, Sendable, Identifiable {
+    public enum Interface: Hashable, Sendable { case wifi, cellular, wired, vpn, other }
+    public var id: String { get }      // "\(name)|\(address)"
+    public let interface: Interface
+    public let name: String            // BSD name, "en0"
+    public let address: IPAddress
+    public init(interface: Interface, name: String, address: IPAddress)
+}
+public enum LocalInterfaces {
+    /// getifaddrs; up+running, non-loopback; IPv4 + global/ULA IPv6. Sorted Wi-Fi, cellular, wired, VPN, other; v4 before v6.
+    public static func current() -> [LocalAddress]
+    static func classify(name: String, hasNonLinkLocal: Bool) -> LocalAddress.Interface   // unit-tested
+}
+```
+
+#### 14.15.3 RIPEstat (new files `Whois.swift`, `WhoisParsing.swift`, `WhoisSummary.swift`, `WhoisSummarizer.swift`, `WhoisRange.swift`, `PinnedHTTP.swift`; changed `RIPEstatClient.swift`, `MockRIPEstat.swift`, `DateParsing.swift`)
+```swift
+public enum IPVersion: String, Sendable, Hashable, CaseIterable { case v4, v6 }
+public enum PublicIPError: Error, Sendable, Equatable {
+    case noRoute(IPVersion), timeout(IPVersion), tls, badResponse(status: Int)
+}
+public struct WhoisField: Sendable, Hashable {
+    public let key: String; public let value: String; public let link: URL?
+    public init(key: String, value: String, link: URL?)
+}
+public struct WhoisRecord: Sendable, Hashable, Identifiable {
+    public let id: Int                                  // index in the response
+    public let fields: [WhoisField]
+    public var primaryKey: String { get }               // first key
+    public var primaryValue: String { get }
+    public var source: String? { get }                  // "ARIN", "RIPE", "RADB"…
+    public var isNoMatchMarker: Bool { get }
+    public func first(_ key: String) -> String?         // case-sensitive (ARIN keys are CamelCase, RPSL lower-case)
+    public func all(_ key: String) -> [String]
+    public init(id: Int, fields: [WhoisField])
+}
+public struct WhoisResponse: Sendable, Hashable {
+    public let resource: String
+    public let authorities: [String]                    // lower-case RIR ids
+    public let records: [WhoisRecord]
+    public let irrRecords: [WhoisRecord]                // de-duplicated
+    public let warnings: [String]
+    public let queryTime: Date?
+    public var isNoMatch: Bool { get }
+    public var isLowConfidence: Bool { get }
+    public init(resource: String, authorities: [String], records: [WhoisRecord], irrRecords: [WhoisRecord],
+                warnings: [String], queryTime: Date?)
+}
+public struct AbuseContacts: Sendable, Hashable {
+    public let emails: [String]; public let authoritativeRIR: String?
+    public init(emails: [String], authoritativeRIR: String?)
+}
+public struct GeoLocation: Sendable, Hashable {
+    public let country: String?; public let city: String?; public let coveredFraction: Double?
+    public init(country: String?, city: String?, coveredFraction: Double?)
+}
+
+public protocol RIPEstatAPI: Sendable {
+    // … existing …
+    func whatsMyIP(over version: IPVersion) async throws -> WhatsMyIP     // NWConnection pinned family, never cached, 8 s
+    func whois(_ resource: String) async throws -> WhoisResponse          // "8.8.8.8", "1.1.1.0/24", "AS13335"
+    func abuseContacts(_ resource: String) async throws -> AbuseContacts  // abuse-contact-finder
+    func registeredCountry(_ resource: String) async throws -> String?    // rir-stats-country, first location
+    func geolocation(_ ip: String) async throws -> GeoLocation?           // maxmind-geo-lite, first location (D4)
+}
+public extension RIPEstatAPI {   // keeps existing fakes compiling (pattern of §12.7)
+    func whatsMyIP(over version: IPVersion) async throws -> WhatsMyIP { throw RIPEstatError.api(messages: ["whats-my-ip(over:) not supported"]) }
+    func whois(_ resource: String) async throws -> WhoisResponse { throw RIPEstatError.api(messages: ["whois not supported"]) }
+    func abuseContacts(_ resource: String) async throws -> AbuseContacts { throw RIPEstatError.api(messages: ["abuse-contact-finder not supported"]) }
+    func registeredCountry(_ resource: String) async throws -> String? { nil }
+    func geolocation(_ ip: String) async throws -> GeoLocation? { nil }
+}
+
+public enum RIR: String, Sendable, Hashable, CaseIterable {
+    case afrinic, apnic, arin, lacnic, ripe
+    public init?(identifier: String)                  // "ARIN", "arin", "RIPE", "RIPE-NONAUTH", "RIPE NCC", "AfriNIC"…
+    public var displayName: String { get }            // "AFRINIC", "APNIC", "ARIN", "LACNIC", "RIPE NCC"
+}
+public struct WhoisSummary: Sendable, Hashable {
+    public enum Subject: Sendable, Hashable { case network, autonomousSystem(UInt32) }
+    public enum Provenance: Sendable, Hashable { case registry, description, asHolder(UInt32), rirStatistics, bgp }
+    public enum Part: Sendable, Hashable { case registry, routing, abuse, country, location, names }
+    public enum Note: Sendable, Hashable { case registryRecordsUnavailable(RIR?), lowConfidence, notAnnounced, missing(Part) }
+    public struct Contact: Sendable, Hashable { public let role: String; public let handle: String }
+    public let subject: Subject
+    public let query: String
+    public let cidrs: [String]
+    public let range: String?
+    public let name: String?
+    public let handle: String?
+    public let descriptions: [String]
+    public let organization: String?
+    public let organizationProvenance: Provenance?
+    public let orgHandle: String?
+    public let country: String?                       // ISO 3166-1 alpha-2 or region code, upper-case
+    public let countryProvenance: Provenance?
+    public let rir: RIR?
+    public let status: String?
+    public let parent: String?
+    public let routedPrefix: String?
+    public let originASNs: [UInt32]                   // BGP
+    public let registeredOrigins: [UInt32]            // IRR / ARIN OriginAS
+    public let announced: Bool?
+    public let abuseEmails: [String]
+    public let abuseProvenance: Provenance?           // .registry (whois) or nil when from abuse-contact-finder
+    public let registered: Date?
+    public let lastModified: Date?
+    public let contacts: [Contact]
+    public let summaryRecordID: Int?                  // WhoisRecord.id used ("Used in summary" tag)
+    public let notes: [Note]
+    public var isEmpty: Bool { get }                  // not-found rule, §14.9.3
+}
+public struct WhoisInputs: Sendable {
+    public var whois: WhoisResponse?
+    public var network: NetworkInfo?
+    public var prefixOverview: PrefixOverview?
+    public var asOverview: ASOverview?
+    public var abuse: AbuseContacts?
+    public var country: String?
+    public var names: [UInt32: String]
+    public var failed: Set<WhoisSummary.Part>
+    public init(whois: WhoisResponse? = nil, network: NetworkInfo? = nil, prefixOverview: PrefixOverview? = nil,
+                asOverview: ASOverview? = nil, abuse: AbuseContacts? = nil, country: String? = nil,
+                names: [UInt32: String] = [:], failed: Set<WhoisSummary.Part> = [])
+}
+public enum WhoisSummarizer {
+    public static func summarize(query: String, subject: WhoisSummary.Subject, inputs: WhoisInputs) -> WhoisSummary
+    /// §14.9.2 most-specific rule; nil when only markers.
+    public static func summaryRecord(in records: [WhoisRecord]) -> WhoisRecord?
+    /// "193.0.0.0 - 193.0.7.255" → ["193.0.0.0/21"]; minimal cover for non-aligned ranges.
+    public static func cidrs(fromRange range: String) -> [String]
+}
+public extension ASName { static func holderName(_ holder: String) -> String }   // rule 1 only, suffix kept
+```
+- `RIPEstatClient.whois/abuseContacts/registeredCountry/geolocation` use the existing `fetch` (cached 5 min, 30 s timeout). `whois` for an IPv6 address does **not** retry by itself; the retry needs the `network-info` prefix and lives in the feature's plan (keeps the client a thin wrapper and the retry testable with fakes).
+- `PinnedHTTP.swift` (internal): `struct PinnedHTTPGet { static func get(host:path:headers:version:timeout:) async throws -> (status: Int, body: Data) }` and `enum HTTP1Response { static func parse(_ raw: Data) throws -> (status: Int, headers: [String: String], body: Data) }` (status line, case-insensitive headers, `Content-Length`, `Transfer-Encoding: chunked`, body cap 64 KB).
+- `DateParsing`: add `yyyy-MM-dd` and ISO 8601 with `Z`.
+- `MockRIPEstat`: serves the new fixtures by key; `whatsMyIP(over: .v4)` → `whats-my-ip_v4.json` (193.0.6.139), `.v6` → `whats-my-ip_v6.json` (2001:67c:2e8:22::c100:696).
+
+#### 14.15.4 SharedUI (changed `Tool.swift`, `NetworkMonitor.swift`)
+```swift
+public enum Tool: String, CaseIterable, Codable, Identifiable, Sendable {
+    case ping, traceroute, bgp, whois                 // title "Whois", systemImage "person.text.rectangle"
+}
+// NetworkMonitor
+public private(set) var supportsIPv4: Bool = true     // NWPath.supportsIPv4
+public private(set) var supportsIPv6: Bool = true     // NWPath.supportsIPv6
+public private(set) var usesVPN: Bool = false         // NWPath.usesInterfaceType(.other) while satisfied
+```
+`RecentTarget.lastTool` decodes the new raw value `"whois"` naturally; older builds never see it.
+
+#### 14.15.5 WhoisFeature (new module)
+Files: `WhoisModel.swift`, `WhoisSubject.swift`, `LocalVerdict.swift`, `MyIPLocator.swift`, `WhoisLoader.swift`, `WhoisFailure.swift`, `WhoisView.swift`, `WhoisPhoneLayout.swift`, `WhoisPadLayout.swift`, `MyIPCard.swift`, `DeviceAddressesCard.swift`, `WhoisSummaryCard.swift`, `WhoisRow.swift`, `WhoisActions.swift`, `LocalAddressCard.swift`, `RawRecordsView.swift`, `RawRecordCard.swift`, `IPSpeech.swift`, `WhoisExport.swift`, `WhoisPreviewData.swift`.
+```swift
+public enum WhoisSubject: Hashable, Sendable {
+    case address(IPAddress, hostname: String?)
+    case prefix(IPAddress, length: Int)
+    case asn(UInt32)
+    public var resource: String { get }               // "8.8.8.8", "1.1.1.0/24", "AS13335"
+    public var canProbe: Bool { get }                 // Ping/Traceroute buttons
+}
+public struct LocalVerdict: Hashable, Sendable {
+    public enum Reason: Hashable, Sendable { case address(SpecialPurposeRange), asn(ReservedASN) }
+    public let input: String
+    public let reason: Reason
+    public let embeddedIPv4: IPAddress?               // "Look up 8.8.8.8 instead"
+}
+public struct WhoisResult: Hashable, Sendable {
+    public let subject: WhoisSubject
+    public let summary: WhoisSummary
+    public let raw: WhoisResponse?
+    public let retriedWith: String?                   // "2001:4860::/32" after the ARIN IPv6 retry
+    public let reverseName: String?
+    public let location: GeoLocation?
+    public let fetchedAt: Date
+}
+public enum WhoisLoad: Hashable, Sendable { case loading, loaded(WhoisResult), failed(WhoisFailure) }
+public struct MyIPSnapshot: Hashable, Sendable {
+    public enum Slot: Hashable, Sendable {
+        case checking
+        case found(IPAddress, reverseName: String?)
+        case unavailable(Unavailable)
+        case failed(String)
+    }
+    public enum Unavailable: Hashable, Sendable { case noRoute, ipv6OnlyNetwork, mismatch, offline }
+    public var v4: Slot
+    public var v6: Slot
+    public let viaVPN: Bool
+    public let generation: Int
+    public let fetchedAt: Date
+}
+actor MyIPLocator {                                   // §14.5.4
+    init(api: any RIPEstatAPI, reverseName: @escaping @Sendable (IPAddress) async -> String?,
+         now: @escaping @Sendable () -> Date = { Date() })
+    func snapshot(generation: Int, supportsV4: Bool, supportsV6: Bool, viaVPN: Bool, force: Bool) -> AsyncStream<MyIPSnapshot>
+}
+struct WhoisLoader: Sendable {                        // §14.8 plans
+    init(api: any RIPEstatAPI, reverseName: @escaping @Sendable (IPAddress) async -> String?, includeLocation: Bool)
+    func load(_ subject: WhoisSubject) async throws -> WhoisResult      // throws WhoisFailure / CancellationError
+}
+@MainActor @Observable public final class WhoisModel {
+    public enum Phase: Equatable {
+        case myIP                                    // default; field empty or ‹ My IP tapped
+        case resolving(String)
+        case loading(WhoisSubject)
+        case loaded(WhoisResult)
+        case local(LocalVerdict)
+        case failed(WhoisFailure)
+    }
+    public var targetText: String
+    public private(set) var phase: Phase
+    public private(set) var myIP: MyIPSnapshot?
+    public var myFamily: IPVersion                   // selected own address; setting it loads that whois if needed
+    public private(set) var myWhois: [IPVersion: WhoisLoad]
+    public private(set) var localAddresses: [LocalAddress]
+    public var inspectorShown: Bool                  // iPad, session only
+    public init(api: any RIPEstatAPI, recents: RecentsStore, router: AppRouter, settings: SettingsStore,
+                network: NetworkMonitor? = nil,
+                resolve: @escaping @Sendable (String, AddressPreference) async throws -> ResolvedTarget = { try await Resolver.resolve($0, preference: $1) },
+                reverseName: @escaping @Sendable (IPAddress) async -> String? = { await Resolver.reverseName(for: $0) },
+                localAddresses: @escaping @Sendable () -> [LocalAddress] = { LocalInterfaces.current() },
+                includeLocation: Bool = true)
+    public func lookUp()                             // parses targetText (TargetParser .bgp)
+    public func lookUp(_ resource: String)           // drill-down / raw link / embedded IPv4: sets targetText too
+    public func cancel()
+    public func showMyIP()                           // ‹ My IP: clears targetText, phase = .myIP
+    public func appeared()                           // §14.5.4 triggers
+    public func refreshMyIP()
+    public func handle(_ request: ToolRequest)       // router: pre-fill, auto-start if requested
+    public func ping()                               // router.open(.ping, …) for the current subject
+    public func trace()
+    public func map()
+    public func stopForBackground()
+    public var exportText: String { get }            // §14.12 summary or My IP text
+    public var exportFullText: String { get }        // + raw records
+    public enum Classified: Equatable { case subject(WhoisSubject), hostname(String), local(LocalVerdict) }
+    public static func classify(_ text: String) -> Classified?   // pure, no network; nil = invalid input
+}
+public struct WhoisView: View { public init(model: WhoisModel) }   // AppShell wraps it in a NavigationStack, like the others
+```
+The view consumes router requests exactly like `BGPMapView` (`.onChange(of: router.requestTick)` → `router.takeRequest(for: .whois)` → `model.handle`).
+
+#### 14.15.6 Cross-link changes in existing features
+- **TraceFeature** (`TraceModel.swift`, `HopRow.swift`, `TraceView.swift`): `public func whoisHop(_ address: IPAddress)`, `public func whoisASN(_ asn: UInt32)`, `public func whoisTarget()`, `public var canWhoisTarget: Bool` (public target). Hop menu: "Whois this hop" after "Map in BGP" (public only); "Whois AS7922" when `hop.asn` exists. Header: icon-only button.
+- **PingFeature** (`PingModel.swift`, `PingView.swift`): `public func whoisTarget()`, `canWhoisTarget`; header icon-only button.
+- **BGPFeature** (`BGPMapModel.swift`, `ASDetailView.swift`, `BGPMapView.swift`): `public func whois(_ resource: String)` (→ `router.open(.whois, target:, autostart: true)`); "Whois AS3356" in AS details; "Whois 1.1.1.0/24" in the toolbar menu when a result is loaded.
+- **AppShell:** `AppEnvironment.whois: WhoisModel` (live: `RIPEstatClient`, `settings`, `network`; preview: `MockRIPEstat` + fixed local addresses; screenshot mode: a fixed-answer API wrapper for `whatsMyIP(over:)`), fourth tab in `PhoneTabsView`, `case .whois` in `SplitRootView`, ⌘4 and the start/stop/copy cases in `RootView`, `environment.whois.stopForBackground()` on background, `ScreenshotMode` accepts `whois`, About text (§14.14).
+
+#### 14.15.7 Fixtures to record (`Tests/RIPEstatTests/Fixtures/`, curl with `sourceapp=ahmadrezaei-iptools`)
+`whois_8.8.8.8.json` · `whois_2001-4860-4860--8888.json` (no-match) · `whois_2001-4860--32.json` (parent chain, 12 objects) · `whois_193.0.6.139.json` · `whois_2001-67c-2e8-22--c100-696.json` · `whois_1.1.1.1.json` · `whois_1.1.1.0-24.json` · `whois_196.216.2.1.json` · `whois_200.160.2.3.json` (LACNIC empty) · `whois_91.107.240.242.json` · `whois_10.0.0.1.json` (IANA-BLK, warning) · `whois_AS13335.json` · `whois_AS3333.json` · `whois_AS22548.json` (empty) · `whois_ORG-HOA1-RIPE_error.json` (400) · `abuse-contact-finder_8.8.8.8.json` · `abuse-contact-finder_193.0.6.139.json` · `abuse-contact-finder_1.1.1.1.json` · `abuse-contact-finder_200.160.2.3_error.json` (backend error envelope) · `abuse-contact-finder_AS13335.json` · `rir-stats-country_8.8.8.8.json` · `rir-stats-country_200.160.2.3.json` · `rir-stats-country_AS13335.json` · `maxmind-geo-lite_193.0.6.139.json` (city empty) · `maxmind-geo-lite_91.107.240.242.json` (city Nuremberg) · `network-info_8.8.8.8.json` · `network-info_193.0.6.139.json` · `network-info_200.160.2.3.json` · `network-info_2001-4860-4860--8888.json` · `as-names_15169-3333-22548-24940.json` · `whats-my-ip_v4.json` · `whats-my-ip_v6.json` (hand-edited to the RIPE NCC addresses) · `http_whats-my-ip_content-length.bin`, `http_whats-my-ip_chunked.bin`, `http_429.bin`, `http_502_html.bin` (raw HTTP/1.1 responses for `HTTP1Response` tests; the 502 body is the nginx HTML page RIPEstat actually returned for `whois?resource=2606:4700:4700::1111` on 2026-11-25).
+
+### 14.16 Work split: three parallel agents, no file overlap
+
+**Step 0 (coordinator, before the agents start, ~20 min):** `Package.swift` (§14.15.1); compiling stubs for every public signature in §14.15 (`fatalError("TODO")` bodies, default protocol extensions, `Tool.whois` with its title and symbol, `NetworkMonitor` properties defaulting to `true`/`false`, a placeholder `WhoisView` and `WhoisModel`, and the `case .whois` branches in AppShell's switches so everything builds). Commit. After that the signatures are frozen and changes go through the coordinator. The coordinator also owns `docs/DESIGN.md`.
+
+| Agent | Owns (exclusive) | Delivers | Tests |
+|---|---|---|---|
+| **D: Data** | `Sources/RIPEstat/**`, `Sources/NetCore/SpecialPurpose.swift`, `Sources/NetCore/LocalInterfaces.swift` (new files only; no edits to existing NetCore files), `Tests/RIPEstatTests/**` (+ all fixtures in §14.15.7), `Tests/NetCoreTests/SpecialPurposeTests.swift`, `Tests/NetCoreTests/LocalInterfacesTests.swift` | New client calls, `PinnedHTTPGet` + `HTTP1Response`, `whatsMyIP(over:)`, parsing, `WhoisSummarizer` (every rule in §14.9), `RIR`, `ASName.holderName`, date formats, mock + fixtures; special-purpose tables, `embeddedIPv4`, `masked(to:)`, `ReservedASN`, `LocalInterfaces` | Golden table §14.9.4 as one test per row; most-specific rule; IRR de-dup; no-match marker; IANA catch-all; range→CIDR cover (aligned, non-aligned, IPv6); HTTP parser (content-length, chunked, 429, 502 HTML, truncated); every special range boundary (first/last address in and just outside); embedded IPv4 for all three formats; ASN boundaries; interface classification table. A live test behind `IPTOOLS_NET_TESTS=1`: pinned v4 returns an IPv4 address; pinned v6 returns IPv6 or `noRoute` |
+| **W: Whois UI** | `Sources/WhoisFeature/**`, `Tests/FeatureTests/Whois*.swift` (own `WhoisTestSupport.swift` with a recording fake API; not the shared `TestSupport.swift`) | All of §14.2–14.13 UI and model: both modes, iPhone and iPad layouts, inspector, raw view, local cards, actions, export, accessibility, previews for every state in §14.11 | Model tests with the fake API: request plans per subject (exact call list); ARIN IPv6 retry; partial (whois fails) vs failed (whois + BGP fail); every local verdict makes **no** API call; embedded-IPv4 offer; host-name resolution via injected resolver; recents recorded only on a successful start; My IP: both / v4-only / v6-only / mismatch / one failed / both failed / skip when `supportsIPv6 == false` / refresh on `pathGeneration` change / 30-min cache; default family IPv4; cancellation on new lookup and background; router calls for Ping/Trace/Map; export golden files (summary, full, My IP, LACNIC, operator provenance, location never exported) |
+| **S: Shell, cross-links, docs** | `Sources/SharedUI/**`, `Sources/AppShell/**`, `Sources/TraceFeature/**`, `Sources/PingFeature/**`, `Sources/BGPFeature/{BGPMapModel,ASDetailView,BGPMapView}.swift`, `Tests/FeatureTests/{Ping,Trace,Shell,SharedUI,BGPMapModel}Tests.swift`, `Tests/FeatureTests/TestSupport.swift`, `PRIVACY.md`, `README.md` | `Tool.whois`, `NetworkMonitor.supportsIPv4/6/usesVPN`, AppEnvironment wiring (live, preview, screenshot fixed IP), tab, split view, sidebar, ⌘4 + start/stop/copy, background stop, ScreenshotMode `whois`, About text; all cross-links in §14.2.2 and §14.15.6; PRIVACY/README text from §14.14 | Router receives `.whois` with the right target for: hop, hop ASN, ping header, trace header, AS details, BGP toolbar; hop menu hides Whois for private hops; ⌘4 selects Whois; recents with `lastTool == .whois` reopen Whois; screenshot mode never calls the real `whatsMyIP` |
+
+Merge order: **D → W → S** (W's previews and tests want D's fixtures; S's wiring replaces the placeholder with W's real view). Any order compiles thanks to Step 0.
+
+**Phase 2 (one agent, devices):** dual-stack Wi-Fi; IPv4-only Wi-Fi; IPv6-only NAT64 (macOS Internet Sharing → "Create NAT64 Network", and a real carrier with 464XLAT if available); cellular with CGNAT (the CGNAT hint); VPN on/off; iCloud Private Relay on; offline; network change while the tab is visible; VoiceOver and AX5 pass; iPad landscape inspector; App Store screenshots in screenshot mode (fixed IP). Verify the `LocalInterfaces` BSD names on iPhone and iPad.
+
+### 14.17 Testing notes
+- The summarizer is pure and fixture-driven: it carries most of the correctness. Every row of §14.9.3 has at least one fixture-backed assertion.
+- The pinned-family transport is split into a tiny `NWConnection` shell (live test only) and a pure HTTP parser (unit tests), so CI needs no network.
+- Feature tests never touch the network: the fake API records calls, so "no request for private input" is asserted directly.
+- Snapshot/preview coverage: every state row in §14.11 has a `#Preview`.
+
+### 14.18 Open questions and risks
+
+**Decisions for the owner (recommended pick first):**
+- **D1. Placement:** a fourth tab named **Whois** (`person.text.rectangle`) whose default content is My IP. *Alternatives:* a tab named "My IP"; inside BGP Map. *Why:* one obvious home for both requests, consistent tool naming, keeps the search keyword visible.
+- **D2. Data source:** **RIPEstat only** (no RDAP) for v1.2. *Alternative:* RDAP via rdap.org + RIR servers, or RDAP as an opt-in later. *Why:* the privacy promise stays "only RIPEstat"; gaps (LACNIC, RIPE org names, ARIN IPv6) have fallbacks.
+- **D3. Both families, IPv4 selected by default:** check IPv4 and IPv6 separately with pinned-family connections and show whois for **IPv4** first when both exist. *Alternative:* one URLSession call (one family only), or IPv6 first. *Why:* phones are often dual-stack and the owner asked for "my IP"; IPv4 is what people quote.
+- **D4. Approximate location row:** **include**, labelled "approx.", MaxMind GeoLite2 via RIPEstat, on screen only, not exported. *Alternative:* omit location entirely. *Why:* it's the most common thing a "my IP" user looks for, and it stays within RIPEstat.
+- **D5. Accepted input:** IP, prefix, ASN **and host name** (resolved on device, with a "not domain whois" line). *Alternative:* IP only. *Why:* the same parser as BGP Map; users paste host names anyway.
+- **D6. Auto-load My IP** when the Whois tab opens and when the network changes while it's visible. *Alternative:* a "Show my IP" button. *Why:* the user opened the tab to see it; RIPEstat already sees the address on every request.
+- **D7. "This device" card** (local addresses + NAT/CGNAT hint, never sent). *Alternative:* omit. *Why:* it explains why the public IP differs from the Wi-Fi address, cheaply and offline.
+- **D8. Store text:** keep the name; subtitle **`Whois, BGP Map & ASN Lookup`**; keywords as in §14.14. *Alternative:* subtitle `My IP, Whois & BGP Map`. *Why:* "whois lookup" and "asn lookup" both match; "my ip" comes from keywords.
+- **D9. Screenshot:** add a My IP & Whois screenshot at **position 2** on all three device sizes. *Alternative:* position 5. *Why:* whois is the highest-volume term in the set.
+- **D10. Cross-link entry points:** hop menu (Whois this hop / Whois ASn), Ping and Traceroute header icon buttons, BGP AS details and toolbar menu. *Alternative:* hop menu only. *Why:* every place an address or AS appears should reach its owner in one tap.
+
+**Risks:**
+- **RW1: RIPEstat whois gaps** (LACNIC empty, RIPE-style org names missing, ARIN bare IPv6 failing). *Mitigation:* specified fallbacks with visible provenance; RDAP opt-in as a v1.3 option.
+- **RW2: Helper endpoints are flaky** (`abuse-contact-finder` returned a backend error for a LACNIC address; `rir` and `whois` each returned a 502 HTML page once during the 2026-11-25 checks). *Mitigation:* every helper is optional; only whois + BGP both failing is fatal; 5xx HTML maps to "busy".
+- **RW3: Pinned-family `NWConnection` behaviour** on NAT64/CLAT, with VPNs and with proxies. *Mitigation:* `NWPath.supportsIPv4/6` pre-check, family-mismatch rule, URLSession fallback, Phase 2 device matrix.
+- **RW4: Request budget.** Opening the tab costs 7–8 RIPEstat calls. *Mitigation:* 30-min per-network cache for My IP, 5-min URL cache for lookups, the other family loaded on demand, 4-request cap, `sourceapp` so RIPE can contact the project.
+- **RW5: Users expecting domain whois.** *Mitigation:* the context line under host-name lookups and a README FAQ entry.
+- **RW6: Personal data in raw records** (ARIN POC names/phones). *Mitigation:* displayed as published, never stored, only exported in *Full Record* on explicit share.
+- **RW7: Screenshots or screen recordings revealing the owner's IP.** *Mitigation:* fixed answers in screenshot mode.
+- **RW8: Schema drift** (keys vary by RIR and over time). *Mitigation:* the summary is best-effort and tolerant; the raw view always shows everything RIPEstat returns.
+- **RW9: Hand-written HTTP/1.1 reader.** *Mitigation:* small surface (one GET, `Connection: close`), fixture tests for both framing modes, URLSession fallback.
