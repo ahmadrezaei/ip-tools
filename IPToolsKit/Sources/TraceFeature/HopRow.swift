@@ -11,6 +11,8 @@ struct HopRow: View {
     var isPending = false
     var onPing: (IPAddress) -> Void = { _ in }
     var onMap: (IPAddress) -> Void = { _ in }
+    var onWhois: (IPAddress) -> Void = { _ in }
+    var onWhoisASN: (UInt32) -> Void = { _ in }
 
     var body: some View {
         HStack(alignment: .center, spacing: 12) {
@@ -116,6 +118,10 @@ struct HopRow: View {
             Button { onPing(address) } label: { Label("Ping this hop", systemImage: Tool.ping.systemImage) }
             if address.isPubliclyRoutable {
                 Button { onMap(address) } label: { Label("Map in BGP", systemImage: Tool.bgp.systemImage) }
+                Button { onWhois(address) } label: { Label("Whois this hop", systemImage: Tool.whois.systemImage) }
+            }
+            if let asn = hop.asn {
+                Button { onWhoisASN(asn.asn) } label: { Label("Whois AS\(String(asn.asn))", systemImage: Tool.whois.systemImage) }
             }
             Button { Clipboard.copy(address.description) } label: { Label("Copy IP", systemImage: "doc.on.doc") }
             if let hostname = hop.hostname {

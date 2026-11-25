@@ -3,6 +3,7 @@
 
 #if DEBUG
 import Foundation
+import RIPEstat
 import SharedUI
 
 /// DEBUG-only launch-argument driver for App Store screenshots (no taps needed):
@@ -47,5 +48,33 @@ struct ScreenshotMode: Equatable {
         if expandHeader { env.bgp.headerExpanded = true }
         env.router.open(tool, target: target ?? "", autostart: target != nil)
     }
+}
+
+/// Wraps the live RIPEstat client for screenshot runs. "What's my IP" answers are fixed (the RIPE NCC
+/// addresses), so a screenshot never shows, and never asks for, the real public address. Everything else
+/// is forwarded.
+struct ScreenshotMyIPAPI: RIPEstatAPI {
+    static let v4 = "193.0.6.139"
+    static let v6 = "2001:67c:2e8:22::c100:696"
+
+    let base: any RIPEstatAPI
+
+    func whatsMyIP() async throws -> WhatsMyIP { WhatsMyIP(ip: Self.v4) }
+
+    func whatsMyIP(over version: IPVersion) async throws -> WhatsMyIP {
+        WhatsMyIP(ip: version == .v4 ? Self.v4 : Self.v6)
+    }
+
+    func networkInfo(_ ip: String) async throws -> NetworkInfo { try await base.networkInfo(ip) }
+    func prefixOverview(_ prefix: String) async throws -> PrefixOverview { try await base.prefixOverview(prefix) }
+    func lookingGlass(_ resource: String) async throws -> LookingGlass { try await base.lookingGlass(resource) }
+    func asOverview(_ asn: UInt32) async throws -> ASOverview { try await base.asOverview(asn) }
+    func asNames(_ asns: [UInt32]) async throws -> [UInt32: String] { try await base.asNames(asns) }
+    func announcedPrefixes(_ asn: UInt32) async throws -> [String] { try await base.announcedPrefixes(asn) }
+    func routingStatus(_ prefix: String) async throws -> RoutingStatus { try await base.routingStatus(prefix) }
+    func whois(_ resource: String) async throws -> WhoisResponse { try await base.whois(resource) }
+    func abuseContacts(_ resource: String) async throws -> AbuseContacts { try await base.abuseContacts(resource) }
+    func registeredCountry(_ resource: String) async throws -> String? { try await base.registeredCountry(resource) }
+    func geolocation(_ ip: String) async throws -> GeoLocation? { try await base.geolocation(ip) }
 }
 #endif

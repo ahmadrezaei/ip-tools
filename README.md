@@ -2,10 +2,10 @@
   <img src="docs/screenshots/app-icon.png" width="128" height="128" alt="IP Tools app icon: a traceroute path ending in ping rings">
 </p>
 
-<h1 align="center">IP Tools: Ping, Traceroute &amp; BGP Map for iPhone and iPad</h1>
+<h1 align="center">IP Tools: Ping, Traceroute, Whois &amp; BGP Map for iPhone and iPad</h1>
 
 <p align="center">
-  A free, open-source network toolkit for iOS and iPadOS: <b>ping</b> any IP or hostname, <b>traceroute</b> hop by hop with ASN lookup, and explore a <b>visual BGP map</b> of the AS paths to any IP address, prefix or AS number.
+  A free, open-source network toolkit for iOS and iPadOS: <b>ping</b> any IP or hostname, <b>traceroute</b> hop by hop with ASN lookup, see <b>your public IP and whois</b> for any IP, prefix or AS, and explore a <b>visual BGP map</b> of the AS paths to any IP address, prefix or AS number.
 </p>
 
 <p align="center">
@@ -25,12 +25,13 @@
 
 ---
 
-**IP Tools** does three things and does them well. It is built for network engineers, sysadmins, NOC and ISP support staff, gamers chasing lag, and anyone curious about how the Internet is wired together.
+**IP Tools** does four things and does them well. It is built for network engineers, sysadmins, NOC and ISP support staff, gamers chasing lag, and anyone curious about how the Internet is wired together.
 
 | Tool | What it does |
 |---|---|
 | 🛰️ **Ping** | ICMP echo to any IPv4 or IPv6 address or hostname. A live RTT chart, plus min / avg / max, jitter and packet loss. |
 | 🧭 **Traceroute** | Hop-by-hop path discovery over IPv4 or IPv6. Each hop shows its response times, reverse DNS hostname and the **ASN / network** that owns it. |
+| 🔎 **Whois & My IP** | Your public IPv4 and IPv6 address and the network behind it. Whois for any IP, prefix or AS number across all five RIRs: organization, country, origin AS, abuse contact, plus the raw registry records. |
 | 🗺️ **BGP Map** | Enter an IP, prefix or ASN to see an interactive graph of the **AS paths** toward the origin AS, built from live routes seen by the **RIPE RIS** route collectors, with **your own path** drawn in blue. A BGP looking glass in your pocket. |
 
 ## Features
@@ -48,7 +49,15 @@
 - Reverse DNS hostnames for each hop
 - **ASN lookup for each hop**: see where your ISP hands off to a transit provider, IXP or CDN
 - Private, CGNAT and link-local hops are labelled locally, with no lookup
-- From any hop, ping it or map it in the BGP view (your measured trace becomes the blue **your path** line); share the whole trace as text
+- From any hop, ping it, whois it or map it in the BGP view (your measured trace becomes the blue **your path** line); share the whole trace as text
+
+### Whois & My IP
+- Your public IPv4 and IPv6 address as the Internet sees them, with both families checked separately, reverse DNS, your local addresses and a NAT/CGNAT hint
+- Whois for IP addresses, prefixes, AS numbers and host names
+- One clean summary across ARIN, RIPE NCC, APNIC, AFRINIC and LACNIC, with the raw records one tap away
+- Private, CGNAT and documentation ranges are explained offline
+- One tap from a traceroute hop or a BGP network
+- Share the result as text
 
 ### BGP Map (AS path viewer)
 - **Your path in blue**: the networks between you and the target are drawn on the graph as a blue line, marked YOU. They come from a quick traceroute on your device, or straight from BGP when your network peers with RIPE RIS
@@ -61,16 +70,17 @@
 - Data comes from the public [RIPEstat Data API](https://stat.ripe.net/docs/data_api) (`looking-glass`, with an automatic fallback to `bgp-state`)
 
 ### Made for iPhone and iPad
-- iPhone: three tabs. iPad: a sidebar with tools and recent targets, plus an inspector for AS details
-- Keyboard shortcuts on iPad: ⌘1/2/3 to switch tools, ⌘L to focus the target, ⌘R to run, ⌘. to stop, ⌘⇧C to copy results
+- iPhone: four tabs. iPad: a sidebar with tools and recent targets, plus an inspector for AS details
+- Keyboard shortcuts on iPad: ⌘1–4 to switch tools, ⌘L to focus the target, ⌘R to run, ⌘. to stop, ⌘⇧C to copy results
 - Dark Mode, Dynamic Type and VoiceOver
 
 ## Privacy
 
 - **No account, no ads, no analytics, no tracking. No data is collected.**
 - Ping and traceroute run entirely on your device, using unprivileged ICMP sockets.
-- Only BGP Map queries and the ASN lookup for public traceroute hops contact **RIPEstat** (`stat.ripe.net`, run by the RIPE NCC). You can turn the hop lookup off in Settings.
+- Only BGP Map, Whois and the ASN lookup for public traceroute hops contact **RIPEstat** (`stat.ripe.net`, run by the RIPE NCC). You can turn the hop lookup off in Settings.
 - **Your path** sends your public IP address to RIPEstat to identify your network, and looks up the public router addresses on the way. RIPEstat already sees that address on every request, and the app keeps it in memory only.
+- **My IP** asks RIPEstat for your public IPv4 and IPv6 address; it is kept in memory only. Your local addresses never leave the device.
 
 Full policy: [PRIVACY.md](PRIVACY.md).
 
@@ -88,7 +98,7 @@ IPToolsKit/          Local Swift package — all code and tests
   Sources/RIPEstat   RIPEstat Data API client and models
   Sources/BGPGraph   AS-path graph builder and layered layout
   Sources/SharedUI   Target input bar, state views, formatting, settings
-  Sources/PingFeature, TraceFeature, BGPFeature   The three tools
+  Sources/PingFeature, TraceFeature, BGPFeature, WhoisFeature   The four tools
   Sources/AppShell   Root navigation (tabs / split view), router, settings
 docs/                Design spec, mockups, icon
 ```
@@ -124,6 +134,12 @@ From the RIPE NCC's Routing Information Service (RIS), via the public RIPEstat D
 **Can it show the path my traffic takes?**
 Yes. BGP Map draws your path in blue: the networks between you and the target. It uses a traceroute measured on your device, or, when your network peers with RIPE RIS, the route seen in BGP.
 
+**Can it show my IP address?**
+Yes. The Whois tab shows your public IPv4 and IPv6 address, checked separately, the network and provider behind them, and your device's local addresses.
+
+**Does it look up domain names?**
+It looks up the network that hosts a domain's address. Domain registration whois (who registered example.com) isn't supported.
+
 **Can I change how many pings are sent?**
 Yes. Use the count menu under the target bar: 5, 10, 20, 50, 100, until stopped, or a custom number from 1 to 10,000.
 
@@ -135,7 +151,7 @@ Yes. Ping, traceroute and the BGP map all work with IPv6 addresses and prefixes.
 
 ## Contributing
 
-Issues and pull requests are welcome. Please keep the app focused on its three tools. The design and architecture are in [docs/DESIGN.md](docs/DESIGN.md), and the approved UI mockups are in [docs/mockup.html](docs/mockup.html).
+Issues and pull requests are welcome. Please keep the app focused on its four tools. The design and architecture are in [docs/DESIGN.md](docs/DESIGN.md), and the approved UI mockups are in [docs/mockup.html](docs/mockup.html).
 
 ## License
 
@@ -145,4 +161,4 @@ BGP data © RIPE NCC, provided through [RIPEstat](https://stat.ripe.net/).
 
 ---
 
-<sub>Keywords: ping app for iPhone, ping count, my route to a server, network path viewer, traceroute iOS, iPad network tools, BGP looking glass, AS path viewer, ASN lookup, IP tools, network diagnostic app, ICMP ping, IPv6 traceroute, RIPEstat, RIPE RIS, open-source iOS network utility, SwiftUI networking app.</sub>
+<sub>Keywords: ping app for iPhone, ping count, my route to a server, network path viewer, traceroute iOS, iPad network tools, BGP looking glass, AS path viewer, ASN lookup, IP tools, network diagnostic app, ICMP ping, IPv6 traceroute, RIPEstat, RIPE RIS, open-source iOS network utility, SwiftUI networking app, what is my IP, my IP address, IPv6 address, whois lookup, IP whois, ASN whois, abuse contact lookup.</sub>

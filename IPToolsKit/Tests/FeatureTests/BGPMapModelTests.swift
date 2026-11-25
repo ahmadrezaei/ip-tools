@@ -242,4 +242,16 @@ private struct FailingAPI: RIPEstatAPI {
         #expect(zoomed.scale == 2 && zoomed.offset == CGSize(width: -100, height: -100))
         #expect(ZoomPanState().zoomed(by: 100, at: .zero, minScale: 0.3).scale == 3)
     }
+
+    @Test func whoisOpensTheWhoisToolWithAutostart() {
+        let router = AppRouter(selectedTool: .bgp)
+        let defaults = UserDefaults(suiteName: "com.ahmadrezaei.iptools.bgp-tests.\(UUID().uuidString)")!
+        let model = BGPMapModel(api: MockRIPEstat(fixtureBundle: .main, latency: .milliseconds(1)),
+                                recents: RecentsStore(defaults: defaults), router: router)
+        model.whois("AS3356")
+        #expect(router.selectedTool == .whois)
+        #expect(router.takeRequest(for: .whois) == ToolRequest(target: "AS3356", autostart: true))
+        model.whois("1.1.1.0/24")
+        #expect(router.takeRequest(for: .whois) == ToolRequest(target: "1.1.1.0/24", autostart: true))
+    }
 }

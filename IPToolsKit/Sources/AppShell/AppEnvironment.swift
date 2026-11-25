@@ -35,7 +35,8 @@ import WhoisFeature
             let defaults = ScreenshotMode.isolatedDefaults()
             let env = AppEnvironment(router: AppRouter(), recents: RecentsStore(defaults: defaults),
                                      settings: SettingsStore(defaults: defaults), network: NetworkMonitor(),
-                                     pingService: Pinger(), traceService: Tracer(), api: RIPEstatClient())
+                                     pingService: Pinger(), traceService: Tracer(),
+                                     api: ScreenshotMyIPAPI(base: RIPEstatClient()))
             mode.apply(to: env)
             return env
         }
