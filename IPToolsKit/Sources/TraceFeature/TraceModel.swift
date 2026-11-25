@@ -207,6 +207,21 @@ public struct TraceHop: Identifiable, Hashable, Sendable {
         if let address = resolved?.address { mapHop(address) }
     }
 
+    /// Whois of a hop address (public addresses only).
+    public func whoisHop(_ address: IPAddress) {
+        guard address.isPubliclyRoutable else { return }
+        router.open(.whois, target: address.description, autostart: true)
+    }
+
+    /// Whois of a hop's AS number.
+    public func whoisASN(_ asn: UInt32) {
+        router.open(.whois, target: "AS\(asn)", autostart: true)
+    }
+
+    public func whoisTarget() {
+        if let address = resolved?.address { whoisHop(address) }
+    }
+
     /// Hops 1...ttl (all when nil), only for finished/stopped runs; nil while running or empty.
     public func snapshot(upTo ttl: Int? = nil) -> TraceSnapshot? {
         guard let resolved, !hops.isEmpty else { return nil }
@@ -226,6 +241,8 @@ public struct TraceHop: Identifiable, Hashable, Sendable {
     }
 
     public var canMapTarget: Bool { resolved?.address.isPubliclyRoutable ?? false }
+
+    public var canWhoisTarget: Bool { canMapTarget }
 
     // MARK: - Export
 

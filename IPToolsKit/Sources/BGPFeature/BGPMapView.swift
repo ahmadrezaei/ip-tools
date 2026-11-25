@@ -277,6 +277,12 @@ public struct BGPMapView: View {
                         Text("Top \(model.maxNodesPerLayer)").tag(model.maxNodesPerLayer)
                     }
                 }
+                if let prefix = model.result?.prefix {
+                    Divider()
+                    Button { model.whois(prefix) } label: {
+                        Label("Whois \(prefix)", systemImage: Tool.whois.systemImage)
+                    }
+                }
             } label: {
                 if isRegular {
                     Label("Top \(model.maxNodesPerLayer)", systemImage: "chevron.down")

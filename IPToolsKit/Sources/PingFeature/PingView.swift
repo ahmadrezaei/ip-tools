@@ -102,6 +102,14 @@ public struct PingView: View {
                 .buttonStyle(.bordered)
                 .buttonBorderShape(.capsule)
             }
+            if model.canWhoisTarget {
+                Button { model.whoisTarget() } label: {
+                    Label("Whois", systemImage: Tool.whois.systemImage).labelStyle(.iconOnly).font(.footnote)
+                }
+                .buttonStyle(.bordered)
+                .buttonBorderShape(.capsule)
+                .accessibilityLabel("Whois \(model.resolved?.address.description ?? "")")
+            }
         }
     }
 

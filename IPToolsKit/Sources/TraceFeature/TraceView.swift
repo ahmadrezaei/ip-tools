@@ -77,6 +77,14 @@ public struct TraceView: View {
                     .buttonStyle(.bordered)
                     .buttonBorderShape(.capsule)
                 }
+                if model.canWhoisTarget {
+                    Button { model.whoisTarget() } label: {
+                        Label("Whois", systemImage: Tool.whois.systemImage).labelStyle(.iconOnly).font(.footnote)
+                    }
+                    .buttonStyle(.bordered)
+                    .buttonBorderShape(.capsule)
+                    .accessibilityLabel("Whois \(model.resolved?.address.description ?? "")")
+                }
             }
             if let ttl = model.currentTTL {
                 ProgressView(value: Double(ttl), total: Double(max(model.activeOptions.maxHops, 1)))
@@ -94,7 +102,8 @@ public struct TraceView: View {
             LazyVStack(spacing: 0) {
                 ForEach(model.hops) { hop in
                     HopRow(hop: hop, isPending: hop.ttl == model.currentTTL,
-                           onPing: { model.pingHop($0) }, onMap: { model.mapHop($0) })
+                           onPing: { model.pingHop($0) }, onMap: { model.mapHop($0) },
+                           onWhois: { model.whoisHop($0) }, onWhoisASN: { model.whoisASN($0) })
                     if hop.ttl != model.hops.last?.ttl || showsPlaceholder { Divider() }
                 }
                 if showsPlaceholder, let ttl = model.currentTTL { HopPlaceholderRow(ttl: ttl) }

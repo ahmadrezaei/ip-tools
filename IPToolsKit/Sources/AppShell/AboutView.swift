@@ -30,6 +30,9 @@ struct AboutSections: View {
             Text("Your path: to draw your path on the BGP Map, your public IP and the public router addresses are sent to RIPEstat to identify networks.")
                 .font(.footnote)
                 .foregroundStyle(.secondary)
+            Text("My IP & Whois: your public IP and the addresses, prefixes and AS numbers you look up are sent to RIPEstat. Your device's local addresses never leave it.")
+                .font(.footnote)
+                .foregroundStyle(.secondary)
             Link(destination: Self.repositoryURL) {
                 Label("Source code on GitHub", systemImage: "chevron.left.forwardslash.chevron.right")
             }
@@ -42,7 +45,7 @@ struct AboutSections: View {
         } header: {
             Text("Data sources")
         } footer: {
-            Text("BGP data: RIPE NCC RIPEstat, built from RIPE RIS route collectors.")
+            Text("BGP and whois data: RIPE NCC RIPEstat, built from RIPE RIS route collectors and the AFRINIC, APNIC, ARIN, LACNIC and RIPE NCC registries. Location data: GeoLite2 by MaxMind, via RIPEstat.")
         }
         Section {
             Button("Clear History", role: .destructive) { confirmClear = true }

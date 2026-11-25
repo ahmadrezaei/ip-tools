@@ -118,6 +118,15 @@ import SharedUI
     /// Whether the current target is a public address (shows "Map in BGP").
     public var canMapInBGP: Bool { resolved?.address.isPubliclyRoutable ?? false }
 
+    /// Opens Whois for the current target (public addresses only).
+    public func whoisTarget() {
+        guard let address = resolved?.address, address.isPubliclyRoutable else { return }
+        router?.open(.whois, target: address.description, autostart: true)
+    }
+
+    /// Whether the current target is a public address (shows the Whois button).
+    public var canWhoisTarget: Bool { canMapInBGP }
+
     /// Picks up a request handed over by the router (cross-links auto-start, recents only pre-fill).
     public func consumePendingRequest() {
         guard let request = router?.takeRequest(for: .ping) else { return }

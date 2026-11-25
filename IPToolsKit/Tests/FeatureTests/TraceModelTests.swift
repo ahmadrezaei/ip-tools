@@ -328,4 +328,38 @@ import SharedUI
         #expect(trace?.hops.last?.asn == nil)
         #expect(trace?.hops.last?.reachedTarget == true)
     }
+
+    @Test func whoisCrossLinks() async {
+        let router = AppRouter()
+        let model = await finishedModel(router: router)
+        model.whoisHop(hop1)                                 // private: ignored
+        #expect(router.selectedTool == .ping)
+        #expect(router.takeRequest(for: .whois) == nil)
+        model.whoisHop(hop3)
+        #expect(router.selectedTool == .whois)
+        #expect(router.takeRequest(for: .whois) == ToolRequest(target: "141.101.65.1", autostart: true))
+        model.whoisASN(13335)
+        #expect(router.takeRequest(for: .whois) == ToolRequest(target: "AS13335", autostart: true))
+    }
+
+    @Test func whoisTargetOpensTheResolvedAddress() async {
+        let router = AppRouter()
+        let model = await finishedModel(router: router)
+        #expect(model.canWhoisTarget)
+        model.whoisTarget()
+        #expect(router.selectedTool == .whois)
+        #expect(router.takeRequest(for: .whois) == ToolRequest(target: "1.1.1.1", autostart: true))
+    }
+
+    @Test func whoisTargetIsUnavailableForPrivateTargetsAndBeforeARun() {
+        let router = AppRouter()
+        let (model, _, _) = makeModel(router: router)
+        #expect(!model.canWhoisTarget)
+        model.whoisTarget()
+        #expect(router.takeRequest(for: .whois) == nil)
+        model.resolved = resolvedTarget("192.168.1.1")
+        #expect(!model.canWhoisTarget)
+        model.whoisTarget()
+        #expect(router.takeRequest(for: .whois) == nil)
+    }
 }

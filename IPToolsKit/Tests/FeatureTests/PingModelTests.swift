@@ -326,6 +326,33 @@ import SharedUI
         #expect(PingCount.progress(sent: 3, count: 10) == "3 of 10")
         #expect(PingCount.progress(sent: 3, count: nil) == "3 sent")
     }
+
+    @Test func whoisTargetOnlyForPublicAddresses() async {
+        let router = AppRouter()
+        let ip = cloudflare
+        let (model, _, _) = makeModel(script: [.reply(rtt: 0.01, bytes: 64, ttl: 58, from: ip)], count: 1, router: router)
+        #expect(!model.canWhoisTarget)
+        model.whoisTarget()
+        #expect(router.takeRequest(for: .whois) == nil)
+        model.targetText = "1.1.1.1"
+        model.start()
+        #expect(await waitUntil { model.phase == .finished })
+        #expect(model.canWhoisTarget)
+        model.whoisTarget()
+        #expect(router.selectedTool == .whois)
+        #expect(router.takeRequest(for: .whois) == ToolRequest(target: "1.1.1.1", autostart: true))
+    }
+
+    @Test func whoisTargetIsHiddenForPrivateAddresses() async {
+        let router = AppRouter()
+        let (model, _, _) = makeModel(script: [.timeout], count: 1, router: router)
+        model.targetText = "192.168.1.1"
+        model.start()
+        #expect(await waitUntil { model.phase == .finished })
+        #expect(!model.canWhoisTarget)
+        model.whoisTarget()
+        #expect(router.takeRequest(for: .whois) == nil)
+    }
 }
 
 final class CallCounter: @unchecked Sendable {
