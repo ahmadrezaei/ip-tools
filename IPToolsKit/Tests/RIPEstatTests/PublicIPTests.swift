@@ -112,6 +112,8 @@ private let networkTestsEnabled = ProcessInfo.processInfo.environment["IPTOOLS_N
         #expect(throws: HTTP1Response.ParseError.tooLarge) {
             try HTTP1Response.parse(Data(chunked.utf8) + Data(repeating: 0x61, count: limit + 1) + Data("\r\n0\r\n\r\n".utf8))
         }
+        let overflow = "HTTP/1.1 200 OK\r\nTransfer-Encoding: chunked\r\n\r\n1\r\na\r\n7fffffffffffffff\r\n"
+        #expect(throws: HTTP1Response.ParseError.tooLarge) { try HTTP1Response.parse(Data(overflow.utf8)) }
         let streaming = Data("HTTP/1.1 200 OK\r\n\r\n".utf8) + Data(repeating: 0x61, count: limit + 1)
         #expect(throws: HTTP1Response.ParseError.tooLarge) { try HTTP1Response.parse(streaming, atEOF: false) }
         #expect(throws: HTTP1Response.ParseError.tooLarge) { try HTTP1Response.parse(streaming, atEOF: true) }
@@ -213,6 +215,8 @@ private let networkTestsEnabled = ProcessInfo.processInfo.environment["IPTOOLS_N
         #expect(PinnedHTTPGet.map(.posix(.ETIMEDOUT), version: .v4) == .timeout(.v4))
         #expect(PinnedHTTPGet.map(.posix(.ECONNRESET), version: .v4) == .badResponse(status: 0))
         #expect(PinnedHTTPGet.map(.dns(-65554), version: .v6) == .noRoute(.v6))
+        #expect(PinnedHTTPGet.map(.dns(-65568), version: .v6) == .badResponse(status: 0))
+        #expect(PinnedHTTPGet.map(.posix(.ECONNREFUSED), version: .v4) == .badResponse(status: 0))
         #expect(PinnedHTTPGet.map(.tls(-9807), version: .v4) == .tls)
     }
 

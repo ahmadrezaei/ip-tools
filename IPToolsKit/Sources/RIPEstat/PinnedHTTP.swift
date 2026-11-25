@@ -40,8 +40,9 @@ struct PinnedHTTPGet {
         switch error {
         case .tls:
             return .tls
-        case .dns:
-            return .noRoute(version)
+        case .dns(let code):
+            // Only "no such record" (kDNSServiceErr_NoSuchRecord) means the host has no address of this family.
+            return code == -65554 ? .noRoute(version) : .badResponse(status: 0)
         case .posix(let code):
             switch code {
             case .ENETUNREACH, .EHOSTUNREACH, .ENETDOWN, .EADDRNOTAVAIL, .EAFNOSUPPORT, .ENOENT:
@@ -57,7 +58,7 @@ struct PinnedHTTPGet {
     }
 }
 
-/// State of one request. All mutable state is guarded by `lock`; Network.framework calls back on `queue`.
+/// State of one request. Shared state is guarded by `lock` (`buffer` is only touched on `queue`); Network.framework calls back on `queue`.
 private final class Exchange: @unchecked Sendable {
     private let version: IPVersion
     private let queue = DispatchQueue(label: "ripestat.pinned-get")
@@ -87,9 +88,8 @@ private final class Exchange: @unchecked Sendable {
         }
         let connection = NWConnection(host: NWEndpoint.Host(host), port: 443, using: parameters)
         self.connection = connection
-        lock.unlock()
-
         connection.stateUpdateHandler = { [weak self] state in self?.handle(state, request: request) }
+        lock.unlock()
         connection.start(queue: queue)
         queue.asyncAfter(deadline: .now() + timeout) { [weak self] in
             guard let self else { return }
@@ -109,11 +109,15 @@ private final class Exchange: @unchecked Sendable {
         case .ready:
             setWaiting(false)
             send(request)
-        case .waiting:
+        case .waiting(let error):
             setWaiting(true)
             queue.asyncAfter(deadline: .now() + PinnedHTTPGet.noRouteGrace) { [weak self] in
                 guard let self, isWaiting() else { return }
-                finish(.failure(PublicIPError.noRoute(version)))
+                let unsatisfied = currentConnection()?.currentPath?.status != .satisfied
+                let mapped = PinnedHTTPGet.map(error, version: version)
+                // No route when the path is down for this family; any other stall (refused, proxy, DNS) is a
+                // plain failure so the caller may still try the URLSession fallback.
+                finish(.failure(unsatisfied || mapped == .noRoute(version) ? PublicIPError.noRoute(version) : mapped))
             }
         case .failed(let error):
             finish(.failure(PinnedHTTPGet.map(error, version: version)))
@@ -162,7 +166,12 @@ private final class Exchange: @unchecked Sendable {
             guard let self else { return }
             if let data { buffer.append(data) }
             if let error {
-                finish(.failure(PinnedHTTPGet.map(error, version: version)))
+                // A reset right after a complete reply still counts as that reply.
+                if data != nil, let parsed = try? HTTP1Response.parse(buffer, atEOF: true) {
+                    finish(.success((parsed.status, parsed.body)))
+                } else {
+                    finish(.failure(PinnedHTTPGet.map(error, version: version)))
+                }
                 return
             }
             do {
@@ -273,7 +282,7 @@ enum HTTP1Response {
                     index = trailerEnd + 2
                 }
             }
-            if body.count + size > bodyLimit { throw ParseError.tooLarge }
+            if size > bodyLimit - body.count { throw ParseError.tooLarge }
             guard bytes.count >= index + size + 2 else { throw ParseError.incomplete }
             body.append(contentsOf: bytes[index..<(index + size)])
             guard bytes[index + size] == 0x0D, bytes[index + size + 1] == 0x0A else { throw ParseError.malformed }

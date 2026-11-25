@@ -51,10 +51,9 @@ import Testing
             entry("utun4", "10.8.0.2"),
             entry("ipsec0", "169.254.1.1"),
         ])
-        #expect(result.map(\.name) == ["utun4", "ipsec0"])
+        // ipsec0 only has a link-local IPv4 address (dropped), so only utun4 remains, as a VPN.
+        #expect(result.map(\.name) == ["utun4"])
         #expect(result.first?.interface == .vpn)
-        // ipsec0 only has a link-local IPv4 address, so it is not reported as a VPN.
-        #expect(result.last?.interface == .other)
     }
 
     @Test func sortOrder() {

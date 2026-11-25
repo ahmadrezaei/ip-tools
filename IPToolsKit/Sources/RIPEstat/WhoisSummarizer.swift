@@ -349,7 +349,7 @@ private struct SummaryBuilder {
             abuseProvenance = nil
             return
         }
-        var found = registryAbuseEmails()
+        var found = chosen == nil && !records.isEmpty ? [] : registryAbuseEmails()
         if found.isEmpty { found = remarkAbuseEmails(chosen) }
         abuseEmails = found
         abuseProvenance = found.isEmpty ? nil : .registry

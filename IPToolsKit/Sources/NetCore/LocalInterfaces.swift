@@ -64,9 +64,9 @@ public enum LocalInterfaces {
         address.specialPurpose?.kind == .linkLocal
     }
 
-    /// IPv4 as is; IPv6 only global unicast (2000::/3) or unique local (fc00::/7).
+    /// IPv4 except link-local; IPv6 only global unicast (2000::/3) or unique local (fc00::/7).
     private static func keep(_ address: IPAddress) -> Bool {
-        guard address.family == .v6 else { return true }
+        guard address.family == .v6 else { return !isLinkLocal(address) }
         let first = address.bytes[0]
         return (first & 0xE0) == 0x20 || (first & 0xFE) == 0xFC
     }
