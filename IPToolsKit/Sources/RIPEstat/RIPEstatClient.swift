@@ -62,7 +62,7 @@ public final class RIPEstatClient: RIPEstatAPI, Sendable {
                                            _ version: IPVersion, _ timeout: TimeInterval) async throws
         -> (status: Int, body: Data)
 
-    static let userAgent = "IPTools/1.0 (iOS; github.com/ahmadrezaei/ip-tools)"
+    static let userAgent = "IPTools/1.2 (iOS; github.com/ahmadrezaei/ip-tools)"
     static let requestTimeout: TimeInterval = 30
     static let whatsMyIPTimeout: TimeInterval = 10
     static let pinnedWhatsMyIPTimeout: TimeInterval = 8

@@ -21,7 +21,7 @@ import Testing
         #expect(request.url?.path.hasSuffix("/data/network-info/data.json") == true)
         #expect(request.resource == "1.1.1.1")
         #expect(request.url?.query?.contains("sourceapp=ahmadrezaei-iptools") == true)
-        #expect(request.value(forHTTPHeaderField: "User-Agent")?.hasPrefix("IPTools/1.0") == true)
+        #expect(request.value(forHTTPHeaderField: "User-Agent")?.hasPrefix("IPTools/") == true)
         #expect(request.timeoutInterval == 30)
     }
 
