@@ -7,7 +7,16 @@ public enum RIR: String, Sendable, Hashable, CaseIterable {
     case afrinic, apnic, arin, lacnic, ripe
 
     /// "ARIN", "arin", "RIPE", "RIPE-NONAUTH", "RIPE NCC", "AfriNIC"…
-    public init?(identifier: String) { nil }
+    public init?(identifier: String) {
+        let key = identifier.lowercased().filter { $0.isLetter || $0.isNumber }
+        if key.hasPrefix("ripe") {
+            self = .ripe
+        } else if let match = RIR.allCases.first(where: { $0.rawValue == key }) {
+            self = match
+        } else {
+            return nil
+        }
+    }
 
     /// "AFRINIC", "APNIC", "ARIN", "LACNIC", "RIPE NCC"
     public var displayName: String {
@@ -63,8 +72,12 @@ public struct WhoisSummary: Sendable, Hashable {
     public let summaryRecordID: Int?                  // WhoisRecord.id used ("Used in summary" tag)
     public let notes: [Note]
 
-    /// Not-found rule, DESIGN §14.9.3.
-    public var isEmpty: Bool { false }
+    /// Not-found rule, DESIGN §14.9.3: no usable network/AS object, no IRR origin, no routed prefix, no
+    /// RIR-statistics country (and no holder or origin AS found some other way).
+    public var isEmpty: Bool {
+        summaryRecordID == nil && registeredOrigins.isEmpty && routedPrefix == nil && country == nil
+            && organization == nil && originASNs.isEmpty
+    }
 
     public init(subject: Subject, query: String, cidrs: [String] = [], range: String? = nil, name: String? = nil,
                 handle: String? = nil, descriptions: [String] = [], organization: String? = nil,

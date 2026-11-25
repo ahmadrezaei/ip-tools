@@ -1,0 +1,8 @@
+HTTP/1.1 200 OK
+Server: nginx
+Date: Wed, 25 Nov 2026 14:40:00 GMT
+Content-Type: application/json
+Content-Length: 381
+Connection: close
+
+{"messages":[],"see_also":[],"version":"1.0","data_call_name":"whats-my-ip","data_call_status":"supported","cached":false,"query_id":"20261125144000-00000000-0000-4000-8000-000000000004","process_time":3,"server_id":"app170","build_version":"v0.12.3-2-2026.11.16","pipeline":"1517264","status":"ok","status_code":200,"time":"2026-11-25T14:40:00.000000","data":{"ip":"193.0.6.139"}}

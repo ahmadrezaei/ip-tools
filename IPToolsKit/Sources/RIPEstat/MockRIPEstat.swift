@@ -10,7 +10,9 @@ import Foundation
 ///
 /// Fixture names: `network-info_<ip>`, `prefix-overview_<prefix>`, `bgp-state_<prefix>` (preferred) or
 /// `looking-glass_<prefix>`, `as-overview_AS<n>`, `as-names_*` (all merged), `announced-prefixes_AS<n>`,
-/// `routing-status_<prefix>`; `/` and `:` in a resource become `-`.
+/// `routing-status_<prefix>`, `whois_<resource>`, `abuse-contact-finder_<resource>`, `rir-stats-country_<resource>`,
+/// `maxmind-geo-lite_<ip>`, `whats-my-ip_v4` / `whats-my-ip_v6`; `/` and `:` in a resource become `-`.
+/// A `<name>_error` fixture is served (and fails the same way the live call does) when the plain one is missing.
 public struct MockRIPEstat: RIPEstatAPI {
     public let fixtureBundle: Bundle
     private let latency: Duration
@@ -144,6 +146,61 @@ public struct MockRIPEstat: RIPEstatAPI {
         try await pause()
         if let data = fixtureData("whats-my-ip") { return try RIPEstatParsing.whatsMyIP(data) }
         return WhatsMyIP(ip: "91.107.240.242")
+    }
+
+    public func whatsMyIP(over version: IPVersion) async throws -> WhatsMyIP {
+        try await pause()
+        let name = "whats-my-ip_\(version.rawValue)"
+        if let data = fixtureData(name) { return try RIPEstatParsing.whatsMyIP(data) }
+        return WhatsMyIP(ip: version == .v4 ? "193.0.6.139" : "2001:67c:2e8:22::c100:696")
+    }
+
+    public func whois(_ resource: String) async throws -> WhoisResponse {
+        try await pause()
+        if let data = fixtureData("whois_\(Self.fixtureKey(resource))") ?? fixtureData("whois_\(Self.fixtureKey(resource))_error") {
+            return try WhoisParsing.whois(data, resource: resource)
+        }
+        return Self.sampleWhois(resource)
+    }
+
+    public func abuseContacts(_ resource: String) async throws -> AbuseContacts {
+        try await pause()
+        let key = Self.fixtureKey(resource)
+        if let data = fixtureData("abuse-contact-finder_\(key)") ?? fixtureData("abuse-contact-finder_\(key)_error") {
+            return try WhoisParsing.abuse(data)
+        }
+        return AbuseContacts(emails: ["abuse@example.net"], authoritativeRIR: "ripe")
+    }
+
+    public func registeredCountry(_ resource: String) async throws -> String? {
+        try await pause()
+        if let data = fixtureData("rir-stats-country_\(Self.fixtureKey(resource))") { return try WhoisParsing.country(data) }
+        return "NL"
+    }
+
+    public func geolocation(_ ip: String) async throws -> GeoLocation? {
+        try await pause()
+        if let data = fixtureData("maxmind-geo-lite_\(Self.fixtureKey(ip))") { return try WhoisParsing.geolocation(data) }
+        return GeoLocation(country: "NL", city: "Amsterdam", coveredFraction: 1)
+    }
+
+    /// Built-in answer for resources without a fixture: one RIPE-style object around the sample prefix.
+    static func sampleWhois(_ resource: String) -> WhoisResponse {
+        func record(_ id: Int, _ pairs: [(String, String)]) -> WhoisRecord {
+            WhoisRecord(id: id, fields: pairs.map { WhoisField(key: $0.0, value: $0.1, link: nil) })
+        }
+        let object: WhoisRecord
+        if resource.uppercased().hasPrefix("AS") {
+            object = record(0, [("aut-num", String(resource.dropFirst(2))), ("as-name", "EXAMPLE-AS"),
+                                ("descr", "Example Network"), ("country", "NL"), ("source", "RIPE")])
+        } else {
+            let prefix = resource.contains("/") ? resource : (resource.hasPrefix("8.8.") ? "8.8.8.0/24" : "1.1.1.0/24")
+            object = record(0, [("inetnum", prefix), ("netname", "EXAMPLE-NET"), ("descr", "Example Network"),
+                                ("country", "NL"), ("status", "ASSIGNED PA"), ("org", "ORG-EX1-RIPE"),
+                                ("source", "RIPE")])
+        }
+        return WhoisResponse(resource: resource, authorities: ["ripe"], records: [object], irrRecords: [],
+                             warnings: [], queryTime: nil)
     }
 
     public func asOverview(_ asn: UInt32) async throws -> ASOverview {

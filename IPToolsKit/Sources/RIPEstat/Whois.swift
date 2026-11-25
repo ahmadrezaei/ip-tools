@@ -33,11 +33,12 @@ public struct WhoisRecord: Sendable, Hashable, Identifiable {
     public var primaryKey: String { fields.first?.key ?? "" }
     public var primaryValue: String { fields.first?.value ?? "" }
     /// "ARIN", "RIPE", "RADB"…
-    public var source: String? { nil }
-    public var isNoMatchMarker: Bool { false }
+    public var source: String? { first("source") }
+    /// A "No match found for …" line (or a `%` comment) the registry sent instead of an object.
+    public var isNoMatchMarker: Bool { primaryKey.hasPrefix("No match found") || primaryKey.hasPrefix("%") }
     /// Case-sensitive (ARIN keys are CamelCase, RPSL lower-case).
-    public func first(_ key: String) -> String? { fatalError("TODO") }
-    public func all(_ key: String) -> [String] { fatalError("TODO") }
+    public func first(_ key: String) -> String? { fields.first { $0.key == key }?.value }
+    public func all(_ key: String) -> [String] { fields.filter { $0.key == key }.map(\.value) }
 }
 
 public struct WhoisResponse: Sendable, Hashable {
@@ -58,8 +59,11 @@ public struct WhoisResponse: Sendable, Hashable {
         self.queryTime = queryTime
     }
 
-    public var isNoMatch: Bool { false }
-    public var isLowConfidence: Bool { false }
+    /// True when the registry answered but only with no-match markers. An empty list (LACNIC) is not a no-match:
+    /// there is nothing to retry.
+    public var isNoMatch: Bool { !records.isEmpty && records.allSatisfy(\.isNoMatchMarker) }
+    /// "Authoritative RIR could not be identified. Best match is returned!"
+    public var isLowConfidence: Bool { warnings.contains { $0.localizedCaseInsensitiveContains("could not be identified") } }
 }
 
 public struct AbuseContacts: Sendable, Hashable {
