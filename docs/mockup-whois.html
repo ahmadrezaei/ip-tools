@@ -1,0 +1,703 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>My IP &amp; Whois</title>
+<meta name="description" content="IP Tools v1.2 design mockups: your public IPv4 and IPv6 with the whois of your network, whois for any IP, prefix or AS, raw records, local verdicts, traceroute entry point and the iPad layout.">
+<style>
+:root {
+  --page-bg: #E9E9EE; --page-fg: #1C1C1E; --page-muted: #5F5F66; --page-card: #FFFFFF; --page-line: rgba(0,0,0,.08);
+  --bezel: #1C1C1E; --bezel-hi: #3A3A3C;
+  --scr-bg: #F2F2F7; --scr-card: #FFFFFF; --label: #000000; --label2: rgba(60,60,67,.62); --label3: rgba(60,60,67,.32);
+  --sep: rgba(60,60,67,.16); --fill: rgba(118,118,128,.12); --fill2: rgba(118,118,128,.20);
+  --bar-bg: rgba(249,249,251,.94); --canvas: #FAFAFC;
+  --blue: #007AFF; --blue-soft: rgba(0,122,255,.12); --green: #34C759; --orange: #FF9500; --red: #FF3B30; --gray: #8E8E93;
+  --g-edge: rgba(60,60,67,.30); --g-node: #FFFFFF; --g-node-line: rgba(60,60,67,.22);
+  color-scheme: light;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --page-bg: #0E0E10; --page-fg: #F2F2F7; --page-muted: #A1A1A8; --page-card: #1C1C1E; --page-line: rgba(255,255,255,.08);
+    --bezel: #2C2C2E; --bezel-hi: #48484A;
+    --scr-bg: #000000; --scr-card: #1C1C1E; --label: #FFFFFF; --label2: rgba(235,235,245,.62); --label3: rgba(235,235,245,.30);
+    --sep: rgba(84,84,88,.6); --fill: rgba(118,118,128,.24); --fill2: rgba(118,118,128,.34);
+    --bar-bg: rgba(22,22,24,.94); --canvas: #0B0B0D;
+    --blue: #0A84FF; --blue-soft: rgba(10,132,255,.20); --green: #30D158; --orange: #FF9F0A; --red: #FF453A; --gray: #8E8E93;
+    --g-edge: rgba(235,235,245,.28); --g-node: #1C1C1E; --g-node-line: rgba(235,235,245,.20);
+    color-scheme: dark;
+  }
+}
+:root[data-theme="dark"] {
+  --page-bg: #0E0E10; --page-fg: #F2F2F7; --page-muted: #A1A1A8; --page-card: #1C1C1E; --page-line: rgba(255,255,255,.08);
+  --bezel: #2C2C2E; --bezel-hi: #48484A;
+  --scr-bg: #000000; --scr-card: #1C1C1E; --label: #FFFFFF; --label2: rgba(235,235,245,.62); --label3: rgba(235,235,245,.30);
+  --sep: rgba(84,84,88,.6); --fill: rgba(118,118,128,.24); --fill2: rgba(118,118,128,.34);
+  --bar-bg: rgba(22,22,24,.94); --canvas: #0B0B0D;
+  --blue: #0A84FF; --blue-soft: rgba(10,132,255,.20); --green: #30D158; --orange: #FF9F0A; --red: #FF453A; --gray: #8E8E93;
+  --g-edge: rgba(235,235,245,.28); --g-node: #1C1C1E; --g-node-line: rgba(235,235,245,.20);
+  color-scheme: dark;
+}
+
+* { box-sizing: border-box; }
+html { -webkit-text-size-adjust: 100%; }
+body {
+  margin: 0; background: var(--page-bg); color: var(--page-fg);
+  font: 15px/1.5 -apple-system, BlinkMacSystemFont, "SF Pro Text", "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+  overflow-x: hidden;
+}
+code, .mono { font-family: ui-monospace, "SF Mono", SFMono-Regular, Menlo, Consolas, monospace; }
+code { font-size: .9em; background: var(--page-line); padding: .1em .35em; border-radius: 5px; }
+
+/* ---------- page chrome ---------- */
+.top { max-width: 1240px; margin: 0 auto; padding: 32px 16px 8px; display: flex; flex-wrap: wrap; gap: 16px 24px; align-items: center; justify-content: space-between; }
+.brand { display: flex; gap: 16px; align-items: center; min-width: 0; }
+.brand svg { flex: none; border-radius: 22%; box-shadow: 0 6px 18px rgba(0,0,0,.18); }
+.brand h1 { margin: 0; font-size: clamp(20px, 4.4vw, 28px); line-height: 1.15; letter-spacing: -.02em; }
+.brand p { margin: 2px 0 0; color: var(--page-muted); }
+.meta { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+.meta span { font-size: 13px; padding: 4px 10px; border-radius: 99px; background: var(--page-card); border: 1px solid var(--page-line); color: var(--page-muted); }
+#theme { font: inherit; font-size: 13px; padding: 5px 12px; border-radius: 99px; border: 1px solid var(--page-line); background: var(--page-fg); color: var(--page-bg); cursor: pointer; }
+.page { max-width: 1240px; margin: 0 auto; padding: 0 16px 48px; }
+.page h2 { font-size: 22px; letter-spacing: -.01em; margin: 40px 0 6px; }
+.lead { color: var(--page-muted); max-width: 820px; margin: 0 0 20px; }
+.grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(100%, 260px), 1fr)); gap: 32px 24px; }
+.shot { margin: 0; display: flex; flex-direction: column; align-items: center; gap: 12px; min-width: 0; }
+.shot figcaption { max-width: 300px; font-size: 13px; color: var(--page-muted); text-align: center; }
+.shot figcaption b { display: block; color: var(--page-fg); font-size: 14px; }
+.shot.wide figcaption { max-width: 720px; }
+.foot { text-align: center; color: var(--page-muted); font-size: 13px; padding: 24px 16px 40px; }
+
+/* ---------- device frames ---------- */
+.phone { width: min(300px, 100%); padding: 9px; border-radius: 48px; background: var(--bezel); box-shadow: inset 0 0 0 1.5px var(--bezel-hi), 0 18px 40px rgba(0,0,0,.22); }
+.phone .screen { position: relative; aspect-ratio: 390 / 844; border-radius: 40px; overflow: hidden; background: var(--scr-bg); container-type: inline-size; }
+.ipad { width: 100%; max-width: 980px; padding: 12px; border-radius: 34px; background: var(--bezel); box-shadow: inset 0 0 0 1.5px var(--bezel-hi), 0 18px 40px rgba(0,0,0,.22); }
+.ipad .screen { position: relative; aspect-ratio: 1180 / 820; border-radius: 22px; overflow: hidden; background: var(--scr-bg); container-type: inline-size; }
+
+/* 1 --u == 1 iOS point */
+.phone .ui { --u: calc(100cqw / 390); }
+.ipad .ui { --u: calc(100cqw / 1180); }
+.ui { position: absolute; inset: 0; color: var(--label); font-size: calc(17 * var(--u)); line-height: 1.25; overflow: hidden;
+  font-family: -apple-system, BlinkMacSystemFont, "SF Pro Text", "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif; font-variant-numeric: tabular-nums; }
+.ui svg { fill: currentColor; }
+.ui small { font-size: calc(13 * var(--u)); color: var(--label2); display: block; }
+.ui .muted { color: var(--label2); }
+.ui .sm { font-size: calc(13 * var(--u)); }
+.ui .grow { flex: 1; min-width: 0; }
+.ui .mono { font-family: ui-monospace, "SF Mono", Menlo, monospace; }
+
+/* status bar */
+.sb { height: calc(54 * var(--u)); display: flex; align-items: center; justify-content: space-between; padding: calc(6 * var(--u)) calc(30 * var(--u)) 0 calc(44 * var(--u)); font-weight: 600; font-size: calc(17 * var(--u)); }
+.island { width: calc(124 * var(--u)); height: calc(36 * var(--u)); background: #000; border-radius: 99px; position: absolute; left: 50%; top: calc(11 * var(--u)); transform: translateX(-50%); }
+.sb-ic { display: flex; gap: calc(6 * var(--u)); align-items: center; }
+.sb-sig { width: calc(18 * var(--u)); height: calc(12 * var(--u)); }
+.sb-wifi { width: calc(16 * var(--u)); height: calc(12 * var(--u)); }
+.sb-bat { width: calc(27 * var(--u)); height: calc(13 * var(--u)); }
+
+/* nav */
+.tb { display: flex; justify-content: flex-end; gap: calc(10 * var(--u)); padding: calc(2 * var(--u)) calc(16 * var(--u)) 0; height: calc(44 * var(--u)); align-items: center; }
+.tbtn { width: calc(34 * var(--u)); height: calc(34 * var(--u)); border-radius: 50%; background: var(--fill); color: var(--blue); display: grid; place-items: center; }
+.tbtn svg { width: calc(20 * var(--u)); height: calc(20 * var(--u)); }
+.tbtn.on { background: var(--blue-soft); }
+.lt { font-size: calc(34 * var(--u)); font-weight: 700; letter-spacing: -.02em; margin: 0; padding: 0 calc(16 * var(--u)) calc(8 * var(--u)); line-height: 1.15; }
+.inl { height: calc(44 * var(--u)); display: grid; grid-template-columns: 1fr auto 1fr; align-items: center; padding: 0 calc(16 * var(--u)); }
+.inl b { font-size: calc(17 * var(--u)); }
+.tb2 { justify-self: end; }
+
+/* target bar */
+.target { display: flex; gap: calc(10 * var(--u)); align-items: center; padding: calc(4 * var(--u)) calc(16 * var(--u)) calc(10 * var(--u)); }
+.field { flex: 1; min-width: 0; height: calc(40 * var(--u)); border-radius: calc(12 * var(--u)); background: var(--fill); display: flex; align-items: center; gap: calc(8 * var(--u)); padding: 0 calc(10 * var(--u)); color: var(--label2); }
+.field svg { width: calc(19 * var(--u)); height: calc(19 * var(--u)); flex: none; }
+.field .val { flex: 1; min-width: 0; color: var(--label); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.field .val.ph { color: var(--label3); }
+.field .clr { color: var(--label3); width: calc(18 * var(--u)); height: calc(18 * var(--u)); }
+.btn { height: calc(40 * var(--u)); padding: 0 calc(18 * var(--u)); border-radius: 99px; display: grid; place-items: center; font-weight: 600; color: #fff; flex: none; }
+.btn.go { background: var(--blue); }
+.btn.stop { background: var(--red); }
+.btn.dis { background: var(--fill2); color: var(--label3); }
+
+.status { margin: 0 calc(16 * var(--u)) calc(10 * var(--u)); font-size: calc(13 * var(--u)); color: var(--label2); display: flex; align-items: center; gap: calc(6 * var(--u)); white-space: nowrap; overflow: hidden; }
+.status b { color: var(--label); font-weight: 600; }
+.live { width: calc(8 * var(--u)); height: calc(8 * var(--u)); border-radius: 50%; background: var(--green); box-shadow: 0 0 0 calc(3 * var(--u)) rgba(52,199,89,.25); flex: none; }
+
+.card { background: var(--scr-card); border-radius: calc(12 * var(--u)); margin: 0 calc(16 * var(--u)) calc(12 * var(--u)); }
+.sec { margin: calc(6 * var(--u)) calc(32 * var(--u)) calc(6 * var(--u)); font-size: calc(13 * var(--u)); color: var(--label2); text-transform: uppercase; letter-spacing: .02em; }
+
+/* ping stats */
+.stats { display: grid; grid-template-columns: repeat(3, 1fr); padding: calc(4 * var(--u)) 0; }
+.stats > div { padding: calc(8 * var(--u)) calc(14 * var(--u)); border-right: .5px solid var(--sep); }
+.stats > div:nth-child(3n) { border-right: 0; }
+.stats > div:nth-child(-n+3) { border-bottom: .5px solid var(--sep); }
+.stats small { font-size: calc(12 * var(--u)); }
+.stats b { font-size: calc(22 * var(--u)); font-weight: 600; letter-spacing: -.01em; }
+.stats i { font-style: normal; font-size: calc(12 * var(--u)); color: var(--label2); margin-left: calc(3 * var(--u)); }
+.t-warn { color: var(--orange); }
+.chartcard { padding: calc(10 * var(--u)) calc(12 * var(--u)) calc(6 * var(--u)); }
+.ch-h { display: flex; justify-content: space-between; font-size: calc(15 * var(--u)); font-weight: 600; }
+.ch-h .muted { font-weight: 400; font-size: calc(12 * var(--u)); }
+.chart { width: 100%; height: auto; display: block; margin-top: calc(4 * var(--u)); }
+.c-grid { stroke: var(--sep); stroke-width: .6; }
+.c-ax { fill: var(--label2); font-size: 8px; text-anchor: end; }
+.c-avg { stroke: var(--label2); stroke-width: .8; stroke-dasharray: 3 3; }
+.c-line { fill: none; stroke: var(--blue); stroke-width: 1.8; stroke-linejoin: round; }
+.c-dot { fill: var(--blue); }
+.c-to { stroke: var(--red); stroke-width: 1.8; fill: none; stroke-linecap: round; }
+
+/* lists */
+.list { list-style: none; padding: 0; overflow: hidden; }
+.row { display: flex; align-items: center; gap: calc(10 * var(--u)); min-height: calc(40 * var(--u)); padding: calc(6 * var(--u)) calc(16 * var(--u)); border-bottom: .5px solid var(--sep); font-size: calc(15 * var(--u)); }
+.row:last-child, .hop:last-child { border-bottom: 0; }
+.dot { width: calc(9 * var(--u)); height: calc(9 * var(--u)); border-radius: 50%; flex: none; display: inline-block; }
+.dot.good { background: var(--green); } .dot.warn { background: var(--orange); } .dot.bad { background: var(--red); } .dot.to { background: var(--label3); }
+.seq { color: var(--label2); width: calc(30 * var(--u)); font-size: calc(13 * var(--u)); }
+.rtt { font-weight: 600; }
+.ric { width: calc(18 * var(--u)); height: calc(18 * var(--u)); color: var(--label2); }
+.lnk { color: var(--blue); display: inline-flex; align-items: center; gap: calc(2 * var(--u)); }
+.lnk svg, .chev { width: calc(13 * var(--u)); height: calc(13 * var(--u)); color: var(--label3); }
+.row.as b { font-size: calc(15 * var(--u)); }
+.row.as small { font-size: calc(12 * var(--u)); }
+.bar { width: calc(56 * var(--u)); height: calc(5 * var(--u)); background: var(--fill); border-radius: 9px; overflow: hidden; }
+.bar i { display: block; height: 100%; background: var(--blue); border-radius: 9px; }
+
+/* traceroute */
+.summary { display: flex; gap: calc(10 * var(--u)); align-items: center; padding: calc(10 * var(--u)) calc(14 * var(--u)); }
+.summary .ok { width: calc(26 * var(--u)); height: calc(26 * var(--u)); color: var(--green); flex: none; }
+.summary b { font-size: calc(15 * var(--u)); }
+.th { display: flex; gap: calc(10 * var(--u)); margin: 0 calc(32 * var(--u)) calc(5 * var(--u)); font-size: calc(11 * var(--u)); color: var(--label2); text-transform: uppercase; letter-spacing: .03em; }
+.hop { display: flex; align-items: center; gap: calc(10 * var(--u)); padding: calc(6 * var(--u)) calc(14 * var(--u)) calc(6 * var(--u)) calc(12 * var(--u)); border-bottom: .5px solid var(--sep); }
+.hn { width: calc(24 * var(--u)); height: calc(24 * var(--u)); border-radius: 50%; background: var(--fill); display: grid; place-items: center; font-size: calc(12 * var(--u)); font-weight: 600; flex: none; color: var(--label2); }
+.hop.dest .hn { background: var(--green); color: #fff; }
+.hop b { display: block; font-size: calc(14 * var(--u)); font-weight: 500; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.hop small { font-size: calc(12 * var(--u)); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.asn { display: inline-block; font-size: calc(11 * var(--u)); font-weight: 600; color: var(--blue); background: var(--blue-soft); border-radius: calc(5 * var(--u)); padding: 0 calc(5 * var(--u)); line-height: 1.5; margin-right: calc(3 * var(--u)); }
+.asn.priv { color: var(--label2); background: var(--fill); }
+.hr { text-align: right; flex: none; }
+.hr b { font-size: calc(14 * var(--u)); font-weight: 600; }
+.hr small { font-size: calc(10.5 * var(--u)); }
+
+/* bgp */
+.pfx { padding: calc(10 * var(--u)) calc(14 * var(--u)); }
+.pfx b { font-size: calc(20 * var(--u)); font-weight: 700; }
+.chips { display: flex; flex-wrap: wrap; gap: calc(6 * var(--u)); margin-top: calc(8 * var(--u)); }
+.chips span { font-size: calc(11.5 * var(--u)); color: var(--label2); background: var(--fill); border-radius: 99px; padding: calc(2 * var(--u)) calc(8 * var(--u)); }
+.seg { display: flex; margin: 0 calc(16 * var(--u)) calc(10 * var(--u)); background: var(--fill); border-radius: calc(9 * var(--u)); padding: calc(2 * var(--u)); }
+.seg span { flex: 1; text-align: center; font-size: calc(13 * var(--u)); font-weight: 500; padding: calc(5 * var(--u)) 0; border-radius: calc(7 * var(--u)); }
+.seg .on { background: var(--scr-card); box-shadow: 0 1px 3px rgba(0,0,0,.12); font-weight: 600; }
+.graphwrap { position: relative; margin: 0 calc(16 * var(--u)); height: calc(404 * var(--u)); background: var(--canvas); border-radius: calc(12 * var(--u)); border: .5px solid var(--sep); overflow: hidden; }
+.graphwrap .graph { position: absolute; right: 0; top: calc(6 * var(--u)); height: calc(380 * var(--u)); width: auto; }
+.zoom { position: absolute; right: calc(10 * var(--u)); bottom: calc(10 * var(--u)); width: calc(34 * var(--u)); height: calc(34 * var(--u)); border-radius: 50%; background: var(--bar-bg); box-shadow: 0 1px 6px rgba(0,0,0,.18); display: grid; place-items: center; color: var(--blue); }
+.zoom svg { width: calc(18 * var(--u)); height: calc(18 * var(--u)); }
+.selcard { position: absolute; left: calc(16 * var(--u)); right: calc(16 * var(--u)); bottom: calc(92 * var(--u)); background: var(--scr-card); border-radius: calc(14 * var(--u)); box-shadow: 0 4px 20px rgba(0,0,0,.16); padding: calc(10 * var(--u)) calc(14 * var(--u)); display: flex; align-items: center; gap: calc(8 * var(--u)); }
+.selcard > div { flex: 1; min-width: 0; }
+.selcard b { font-size: calc(15 * var(--u)); display: block; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.selcard .lnk { font-size: calc(15 * var(--u)); }
+
+/* graph svg */
+.g-edge { fill: none; stroke: var(--g-edge); stroke-linecap: round; }
+.g-edge.g-lat { stroke-dasharray: 3 4; }
+.g-edge.g-hl { stroke: var(--blue); opacity: 1; }
+.g-node rect { fill: var(--g-node); stroke: var(--g-node-line); stroke-width: 1; }
+.g-asn { font: 600 14px -apple-system, BlinkMacSystemFont, "SF Pro Text", "Segoe UI", sans-serif; fill: var(--label); font-variant-numeric: tabular-nums; }
+.g-name { font: 400 11px -apple-system, BlinkMacSystemFont, "SF Pro Text", "Segoe UI", sans-serif; fill: var(--label2); }
+.g-head { font: 600 9.5px -apple-system, BlinkMacSystemFont, sans-serif; fill: var(--label2); letter-spacing: .06em; }
+.g-peer { fill: var(--green); }
+.g-origin rect { fill: var(--blue); stroke: var(--blue); }
+.g-origin .g-asn, .g-origin .g-name { fill: #fff; }
+.g-more rect { fill: transparent; stroke-dasharray: 4 3; stroke: var(--label2); }
+.g-sel rect { stroke: var(--blue); stroke-width: 2.5; fill: var(--blue-soft); }
+.g-dim { opacity: .38; }
+
+/* empty state */
+.cuv { text-align: center; padding: calc(36 * var(--u)) calc(32 * var(--u)) calc(16 * var(--u)); }
+.cuv-i { width: calc(56 * var(--u)); height: calc(56 * var(--u)); color: var(--label3); }
+.cuv h2 { font-size: calc(22 * var(--u)); margin: calc(10 * var(--u)) 0 calc(6 * var(--u)); font-weight: 700; }
+.cuv p { font-size: calc(15 * var(--u)); color: var(--label2); margin: 0 0 calc(16 * var(--u)); }
+.ex { display: flex; justify-content: center; gap: calc(8 * var(--u)); flex-wrap: wrap; }
+.ex span { font-size: calc(14 * var(--u)); color: var(--blue); background: var(--blue-soft); border-radius: 99px; padding: calc(5 * var(--u)) calc(12 * var(--u)); font-weight: 500; }
+
+/* tab bar */
+.tabbar { position: absolute; left: 0; right: 0; bottom: 0; height: calc(83 * var(--u)); background: var(--bar-bg); border-top: .5px solid var(--sep); display: flex; justify-content: space-around; padding-top: calc(7 * var(--u)); -webkit-backdrop-filter: blur(20px); backdrop-filter: blur(20px); }
+.tab { display: flex; flex-direction: column; align-items: center; gap: calc(2 * var(--u)); color: var(--gray); width: calc(100 * var(--u)); }
+.tab svg { width: calc(26 * var(--u)); height: calc(26 * var(--u)); }
+.tab b { font-size: calc(10 * var(--u)); font-weight: 500; }
+.tab.on { color: var(--blue); }
+.homebar { position: absolute; bottom: calc(8 * var(--u)); left: 50%; transform: translateX(-50%); width: calc(134 * var(--u)); height: calc(5 * var(--u)); border-radius: 9px; background: var(--label); }
+
+/* ---------- iPad ---------- */
+.ipad .ui { display: grid; grid-template-columns: calc(300 * var(--u)) 1fr calc(320 * var(--u)); grid-template-rows: calc(24 * var(--u)) 1fr; }
+.ip-sb { grid-column: 1 / -1; display: flex; justify-content: space-between; align-items: center; padding: 0 calc(22 * var(--u)); font-size: calc(13 * var(--u)); font-weight: 600; }
+.side { background: var(--scr-bg); border-right: .5px solid var(--sep); padding: 0 calc(12 * var(--u)); position: relative; }
+.ipad .screen { background: var(--scr-card); }
+.side-tb { height: calc(40 * var(--u)); display: flex; align-items: center; color: var(--blue); padding-left: calc(6 * var(--u)); }
+.side-tb svg { width: calc(24 * var(--u)); height: calc(24 * var(--u)); }
+.side h1 { font-size: calc(30 * var(--u)); margin: 0 calc(8 * var(--u)) calc(10 * var(--u)); letter-spacing: -.02em; }
+.ssec { font-size: calc(13 * var(--u)); color: var(--label2); text-transform: uppercase; letter-spacing: .03em; margin: calc(14 * var(--u)) calc(10 * var(--u)) calc(6 * var(--u)); font-weight: 600; }
+.slist { list-style: none; margin: 0; padding: 0; }
+.slist li { display: flex; align-items: center; gap: calc(12 * var(--u)); padding: calc(10 * var(--u)) calc(12 * var(--u)); border-radius: calc(10 * var(--u)); font-size: calc(17 * var(--u)); }
+.slist li svg { width: calc(22 * var(--u)); height: calc(22 * var(--u)); color: var(--blue); }
+.slist li.on { background: var(--blue); color: #fff; }
+.slist li.on svg { color: #fff; }
+.slist.rec li { font-size: calc(15 * var(--u)); padding: calc(8 * var(--u)) calc(12 * var(--u)); }
+.slist.rec li svg { color: var(--label2); width: calc(18 * var(--u)); height: calc(18 * var(--u)); }
+.slist.foot { position: absolute; bottom: calc(16 * var(--u)); left: calc(12 * var(--u)); right: calc(12 * var(--u)); }
+.det { display: flex; flex-direction: column; min-width: 0; background: var(--scr-bg); }
+.det-tb { height: calc(56 * var(--u)); display: flex; align-items: center; gap: calc(10 * var(--u)); padding: 0 calc(16 * var(--u)); }
+.det-tb > b { font-size: calc(17 * var(--u)); margin-right: calc(6 * var(--u)); }
+.det-tb .field { max-width: calc(300 * var(--u)); height: calc(36 * var(--u)); }
+.det-tb .btn { height: calc(36 * var(--u)); }
+.menu { margin-left: auto; font-size: calc(15 * var(--u)); color: var(--blue); background: var(--fill); padding: calc(6 * var(--u)) calc(12 * var(--u)); border-radius: 99px; }
+.det-hd { display: flex; flex-wrap: wrap; align-items: baseline; gap: calc(6 * var(--u)) calc(14 * var(--u)); padding: calc(4 * var(--u)) calc(20 * var(--u)) calc(10 * var(--u)); font-size: calc(15 * var(--u)); color: var(--label2); }
+.det-hd b { font-size: calc(22 * var(--u)); color: var(--label); }
+.det-hd .chips { margin: 0; }
+.det-graph { position: relative; flex: 1; margin: 0 calc(16 * var(--u)) calc(16 * var(--u)); background: var(--canvas); border: .5px solid var(--sep); border-radius: calc(14 * var(--u)); overflow: hidden; }
+.det-graph .graph { position: absolute; inset: calc(16 * var(--u)); width: calc(100% - 32 * var(--u)); height: calc(100% - 32 * var(--u)); }
+.insp { background: var(--scr-card); border-left: .5px solid var(--sep); padding: calc(20 * var(--u)) calc(20 * var(--u)); overflow: hidden; }
+.ins-k { margin: 0; font-size: calc(13 * var(--u)); color: var(--label2); text-transform: uppercase; letter-spacing: .03em; font-weight: 600; }
+.insp h2 { margin: calc(4 * var(--u)) 0 0; font-size: calc(28 * var(--u)); letter-spacing: -.02em; }
+.ins-n { margin: 0 0 calc(10 * var(--u)); color: var(--label2); font-size: calc(17 * var(--u)); }
+.ins-badges { display: flex; gap: calc(6 * var(--u)); flex-wrap: wrap; }
+.ins-badges span { font-size: calc(13 * var(--u)); background: var(--blue-soft); color: var(--blue); border-radius: 99px; padding: calc(3 * var(--u)) calc(10 * var(--u)); font-weight: 500; }
+.ins-grid { display: grid; grid-template-columns: 1fr 1fr; gap: calc(10 * var(--u)); margin: calc(16 * var(--u)) 0 calc(4 * var(--u)); }
+.ins-grid div { background: var(--scr-bg); border-radius: calc(12 * var(--u)); padding: calc(10 * var(--u)) calc(12 * var(--u)); }
+.ins-grid b { display: block; font-size: calc(24 * var(--u)); }
+.ins-grid i { font-style: normal; font-size: calc(12 * var(--u)); color: var(--label2); }
+.insp .ssec { margin-left: 0; }
+.ins-paths { list-style: none; margin: 0; padding: 0; font-family: ui-monospace, "SF Mono", Menlo, monospace; font-size: calc(14 * var(--u)); }
+.ins-paths li { padding: calc(7 * var(--u)) 0; border-bottom: .5px solid var(--sep); color: var(--label2); }
+.ins-paths b { color: var(--blue); }
+.ins-act { list-style: none; margin: calc(16 * var(--u)) 0 0; padding: 0; background: var(--scr-bg); border-radius: calc(12 * var(--u)); }
+.ins-act li { display: flex; gap: calc(10 * var(--u)); align-items: center; padding: calc(11 * var(--u)) calc(12 * var(--u)); color: var(--blue); font-size: calc(15 * var(--u)); border-bottom: .5px solid var(--sep); }
+.ins-act li:last-child { border-bottom: 0; }
+.ins-act svg { width: calc(20 * var(--u)); height: calc(20 * var(--u)); }
+
+/* ---------- icon, states, legend ---------- */
+.icons { display: flex; flex-wrap: wrap; align-items: flex-end; gap: 20px 24px; }
+.icons figure { margin: 0; text-align: center; color: var(--page-muted); font-size: 12px; }
+.icons figure svg { display: block; border-radius: 22.37%; box-shadow: 0 4px 14px rgba(0,0,0,.18); max-width: 100%; height: auto; }
+.icon-note { flex: 1 1 280px; margin: 0; color: var(--page-muted); max-width: 520px; }
+.states { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(100%, 220px), 1fr)); gap: 16px; }
+.st { background: var(--page-card); border: 1px solid var(--page-line); border-radius: 16px; padding: 16px; }
+.st b { display: block; margin: 8px 0 4px; }
+.st p { margin: 0; color: var(--page-muted); font-size: 14px; }
+.st-i { width: 28px; height: 28px; color: var(--page-muted); fill: currentColor; }
+.st-i.warn { color: var(--orange); }
+.spin { display: block; width: 26px; height: 26px; border-radius: 50%; border: 3px solid var(--page-line); border-top-color: var(--blue); animation: spin 1s linear infinite; }
+@keyframes spin { to { transform: rotate(360deg); } }
+@media (prefers-reduced-motion: reduce) { .spin { animation: none; } }
+.legend { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(100%, 340px), 1fr)); gap: 12px; }
+.lg { display: flex; gap: 14px; align-items: center; background: var(--page-card); border: 1px solid var(--page-line); border-radius: 14px; padding: 12px 14px; min-width: 0; }
+.lg p { margin: 0; font-size: 14px; color: var(--page-muted); min-width: 0; }
+.lg p b { color: var(--page-fg); }
+.lg-s { width: 120px; height: 44px; flex: none; --label: var(--page-fg); }
+.rttkey { display: flex; flex-direction: column; gap: 3px; font-size: 12px; flex: none; width: 120px; color: var(--page-muted); }
+.rttkey .dot { width: 9px; height: 9px; margin-right: 6px; vertical-align: -1px; }
+.notes { margin: 20px 0 0; padding-left: 20px; color: var(--page-muted); max-width: 900px; }
+.notes li { margin-bottom: 8px; }
+.notes b { color: var(--page-fg); }
+
+/* ---------- v1.2 whois ---------- */
+.top .brand p b { color: var(--page-fg); font-weight: 600; }
+.tabbar.four .tab { width: calc(86 * var(--u)); }
+.kv { list-style: none; margin: 0; padding: 0; }
+.kv li { display: flex; gap: calc(10 * var(--u)); padding: calc(6.5 * var(--u)) calc(14 * var(--u)); border-top: .5px solid var(--sep); font-size: calc(14 * var(--u)); align-items: baseline; }
+.kv .k { width: calc(92 * var(--u)); flex: none; color: var(--label2); font-size: calc(13 * var(--u)); }
+.kv .v { flex: 1; min-width: 0; overflow-wrap: anywhere; }
+.kv .v small { font-size: calc(11.5 * var(--u)); }
+.kv .v.link, .ui .tint { color: var(--blue); }
+.kv .v .warnt { color: var(--orange); }
+.sumhd { padding: calc(10 * var(--u)) calc(14 * var(--u)) calc(8 * var(--u)); }
+.sumhd b { font-size: calc(20 * var(--u)); font-weight: 700; display: block; }
+.fam { font-size: calc(10.5 * var(--u)); font-weight: 700; padding: calc(1 * var(--u)) calc(6 * var(--u)); border-radius: 99px; background: var(--fill2); color: var(--label2); flex: none; letter-spacing: .02em; }
+.iprow { display: flex; align-items: center; gap: calc(10 * var(--u)); padding: calc(9 * var(--u)) calc(10 * var(--u)) calc(9 * var(--u)) calc(14 * var(--u)); border-bottom: .5px solid var(--sep); position: relative; }
+.iprow:last-child { border-bottom: 0; }
+.iprow.sel { background: var(--blue-soft); }
+.iprow.sel::before { content: ""; position: absolute; left: 0; top: calc(8 * var(--u)); bottom: calc(8 * var(--u)); width: calc(3 * var(--u)); border-radius: 3px; background: var(--blue); }
+.iprow .ip { font-family: ui-monospace, "SF Mono", Menlo, monospace; font-weight: 600; font-size: calc(16.5 * var(--u)); line-height: 1.2; overflow-wrap: anywhere; }
+.iprow .ip.v6 { font-size: calc(13.5 * var(--u)); }
+.iprow .ip.na { font-family: inherit; font-weight: 400; color: var(--label2); font-size: calc(14 * var(--u)); }
+.cpy { width: calc(32 * var(--u)); height: calc(32 * var(--u)); color: var(--blue); display: grid; place-items: center; flex: none; }
+.cpy svg { width: calc(19 * var(--u)); height: calc(19 * var(--u)); }
+.foot-n { margin: calc(-6 * var(--u)) calc(32 * var(--u)) calc(10 * var(--u)); font-size: calc(11.5 * var(--u)); color: var(--label2); }
+.segrow { display: flex; align-items: center; gap: calc(10 * var(--u)); margin: 0 calc(16 * var(--u)) calc(6 * var(--u)); font-size: calc(13 * var(--u)); color: var(--label2); }
+.segrow .seg { flex: 1; margin: 0; }
+.acts { display: grid; grid-template-columns: repeat(3, 1fr); gap: calc(8 * var(--u)); margin: 0 calc(16 * var(--u)) calc(12 * var(--u)); }
+.acts.two { grid-template-columns: repeat(2, 1fr); }
+.acts span { background: var(--scr-card); border-radius: calc(12 * var(--u)); padding: calc(8 * var(--u)) 0 calc(7 * var(--u)); display: flex; flex-direction: column; align-items: center; gap: calc(3 * var(--u)); color: var(--blue); font-size: calc(12 * var(--u)); font-weight: 500; }
+.acts svg { width: calc(22 * var(--u)); height: calc(22 * var(--u)); }
+.ctxline { display: flex; justify-content: space-between; align-items: center; gap: calc(10 * var(--u)); margin: calc(-2 * var(--u)) calc(16 * var(--u)) calc(10 * var(--u)); font-size: calc(13 * var(--u)); color: var(--label2); white-space: nowrap; }
+.ctxline > span:last-child { overflow: hidden; text-overflow: ellipsis; }
+.ctxline .lnk svg { color: var(--blue); width: calc(12 * var(--u)); height: calc(12 * var(--u)); }
+.note { margin: calc(2 * var(--u)) calc(14 * var(--u)) calc(10 * var(--u)); padding: calc(7 * var(--u)) calc(10 * var(--u)); background: var(--fill); border-radius: calc(8 * var(--u)); font-size: calc(12 * var(--u)); color: var(--label2); }
+.tag { display: inline-block; font-size: calc(10 * var(--u)); font-weight: 600; padding: 0 calc(5 * var(--u)); border-radius: calc(4 * var(--u)); background: var(--fill); color: var(--label2); line-height: 1.6; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; }
+.tag.green { background: rgba(52,199,89,.16); color: var(--green); }
+.tag.new { background: var(--orange); color: #fff; }
+.chev-l { transform: scaleX(-1); }
+/* raw records */
+.rawhd { display: flex; justify-content: space-between; align-items: center; gap: calc(8 * var(--u)); padding: calc(8 * var(--u)) calc(12 * var(--u)) calc(6 * var(--u)); font-size: calc(13 * var(--u)); font-weight: 600; border-bottom: .5px solid var(--sep); }
+.raw { list-style: none; margin: 0; padding: calc(4 * var(--u)) 0 calc(6 * var(--u)); font-family: ui-monospace, "SF Mono", Menlo, monospace; font-size: calc(11.5 * var(--u)); line-height: 1.35; }
+.raw li { display: flex; gap: calc(8 * var(--u)); padding: calc(2 * var(--u)) calc(12 * var(--u)); }
+.raw .k { width: calc(108 * var(--u)); flex: none; color: var(--label2); overflow-wrap: anywhere; }
+.raw .v { flex: 1; min-width: 0; overflow-wrap: anywhere; }
+.raw .v.link { color: var(--blue); }
+.raw .more { color: var(--blue); font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; font-size: calc(12.5 * var(--u)); padding-top: calc(4 * var(--u)); }
+/* local verdict */
+.local { padding: calc(14 * var(--u)) calc(14 * var(--u)) calc(10 * var(--u)); }
+.local .ic { width: calc(34 * var(--u)); height: calc(34 * var(--u)); color: var(--label2); }
+.local h3 { margin: calc(6 * var(--u)) 0 calc(4 * var(--u)); font-size: calc(19 * var(--u)); }
+.local p { margin: 0; font-size: calc(14 * var(--u)); color: var(--label2); }
+.local p b { color: var(--label); }
+.minis { display: flex; flex-wrap: wrap; gap: calc(6 * var(--u)); margin: 0 calc(16 * var(--u)); }
+.minis span { font-size: calc(11.5 * var(--u)); color: var(--label2); background: var(--fill); border-radius: 99px; padding: calc(3 * var(--u)) calc(9 * var(--u)); }
+/* context menu */
+.scrim { position: absolute; inset: 0; background: rgba(0,0,0,.22); -webkit-backdrop-filter: blur(5px); backdrop-filter: blur(5px); }
+.lifted { position: absolute; left: calc(16 * var(--u)); right: calc(16 * var(--u)); top: calc(248 * var(--u)); background: var(--scr-card); border-radius: calc(12 * var(--u)); box-shadow: 0 8px 30px rgba(0,0,0,.25); }
+.cmenu { position: absolute; left: calc(16 * var(--u)); width: calc(262 * var(--u)); top: calc(310 * var(--u)); background: var(--scr-card); border-radius: calc(14 * var(--u)); box-shadow: 0 10px 34px rgba(0,0,0,.28); overflow: hidden; list-style: none; margin: 0; padding: 0; }
+.cmenu li { display: flex; justify-content: space-between; align-items: center; gap: calc(8 * var(--u)); padding: calc(10.5 * var(--u)) calc(14 * var(--u)); font-size: calc(16 * var(--u)); border-bottom: .5px solid var(--sep); }
+.cmenu li:last-child { border-bottom: 0; }
+.cmenu li.gap { border-bottom: calc(7 * var(--u)) solid var(--fill); }
+.cmenu li.hl { background: var(--blue-soft); }
+.cmenu svg { width: calc(20 * var(--u)); height: calc(20 * var(--u)); flex: none; }
+.cmenu .l { display: flex; align-items: center; gap: calc(8 * var(--u)); }
+/* iPad whois */
+.ipad .det .ctxline { margin: 0 calc(20 * var(--u)) calc(10 * var(--u)); justify-content: flex-start; }
+.wcol { padding: 0 calc(16 * var(--u)); min-height: 0; overflow: hidden; }
+.wcol .kv .k { width: calc(110 * var(--u)); }
+.tiles { display: grid; grid-template-columns: 1fr 1fr; }
+.tiles .iprow { border-bottom: 0; }
+.tiles .iprow + .iprow { border-left: .5px solid var(--sep); }
+.wgrid { display: grid; grid-template-columns: calc(320 * var(--u)) 1fr; gap: calc(16 * var(--u)); padding: 0 calc(16 * var(--u)); align-items: start; min-height: 0; overflow: hidden; }
+.wgrid .card { margin: 0 0 calc(12 * var(--u)); }
+.wgrid .sec { margin: calc(4 * var(--u)) calc(16 * var(--u)) calc(6 * var(--u)); }
+.wgrid .foot-n { margin: calc(-6 * var(--u)) calc(16 * var(--u)) calc(12 * var(--u)); }
+.wgrid .acts { margin: 0 0 calc(12 * var(--u)); }
+.wgrid .kv .k { width: calc(104 * var(--u)); }
+.insp .raw { font-size: calc(11.5 * var(--u)); }
+.insp .raw li { padding-left: 0; padding-right: 0; }
+.insp .raw .k { width: calc(104 * var(--u)); }
+.insp .rawhd { padding-left: 0; padding-right: 0; }
+.insp h3 { margin: calc(4 * var(--u)) 0 calc(8 * var(--u)); font-size: calc(20 * var(--u)); }
+/* page extras */
+.export { background: var(--page-card); border: 1px solid var(--page-line); border-radius: 14px; padding: 14px 16px; margin: 0; overflow-x: auto; font-size: 12.5px; line-height: 1.5; max-width: 100%; }
+.cols { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(100%, 380px), 1fr)); gap: 16px; }
+.cols h3 { margin: 0 0 8px; font-size: 15px; }
+.decisions { margin: 0; padding-left: 0; list-style: none; display: grid; grid-template-columns: minmax(0, 1fr); gap: 10px; max-width: 980px; }
+.decisions code, .notes code, .lg code { overflow-wrap: anywhere; word-break: break-word; }
+.decisions li { min-width: 0; }
+.decisions li { background: var(--page-card); border: 1px solid var(--page-line); border-radius: 14px; padding: 12px 14px; color: var(--page-muted); font-size: 14px; }
+.decisions li b { color: var(--page-fg); }
+.decisions .pick { display: inline-block; font-size: 12px; font-weight: 600; color: #fff; background: #34C759; border-radius: 99px; padding: 1px 8px; margin-right: 6px; }
+.minitab { display: flex; justify-content: space-around; flex: none; width: 156px; padding: 6px 0 4px; border-radius: 12px; background: var(--page-bg); }
+.minitab span { display: flex; flex-direction: column; align-items: center; font-size: 9px; color: var(--page-muted); gap: 1px; }
+.minitab span.on { color: #0A84FF; }
+.minitab svg { width: 20px; height: 20px; fill: currentColor; }
+
+</style>
+</head>
+<body>
+
+<svg width="0" height="0" style="position:absolute" aria-hidden="true">
+ <symbol id="i-ping" viewBox="0 0 24 24"><circle cx="12" cy="12" r="2.6" fill="currentColor"/><path d="M8.3 8.3a5.3 5.3 0 0 0 0 7.4M15.7 8.3a5.3 5.3 0 0 1 0 7.4M5.3 5.3a9.5 9.5 0 0 0 0 13.4M18.7 5.3a9.5 9.5 0 0 1 0 13.4" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round"/></symbol>
+ <symbol id="i-trace" viewBox="0 0 24 24"><circle cx="5" cy="5" r="2.8" fill="currentColor"/><circle cx="19" cy="19" r="2.8" fill="currentColor"/><path d="M7.6 6.2C16 7.5 6 15.5 16.6 17.6" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-dasharray="2.2 2.6"/></symbol>
+ <symbol id="i-bgp" viewBox="0 0 24 24"><path d="M12 5L5 18.5M12 5l7 13.5M5 18.5h14" fill="none" stroke="currentColor" stroke-width="1.7" stroke-dasharray="2 2.2"/><circle cx="12" cy="4.6" r="2.8" fill="currentColor"/><circle cx="4.6" cy="18.6" r="2.8" fill="currentColor"/><circle cx="19.4" cy="18.6" r="2.8" fill="currentColor"/></symbol>
+ <symbol id="i-gear" viewBox="0 0 24 24"><path d="M12 8.6a3.4 3.4 0 1 0 0 6.8 3.4 3.4 0 0 0 0-6.8Zm8.2 4.6v-2.4l-2.3-.6a6.3 6.3 0 0 0-.7-1.6l1.2-2-1.7-1.7-2 1.2c-.5-.3-1-.5-1.6-.7L12.5 3h-2.4l-.6 2.3c-.6.2-1.1.4-1.6.7l-2-1.2-1.7 1.7 1.2 2c-.3.5-.5 1-.7 1.6l-2.3.6v2.4l2.3.6c.2.6.4 1.1.7 1.6l-1.2 2 1.7 1.7 2-1.2c.5.3 1 .5 1.6.7l.6 2.3h2.4l.6-2.3c.6-.2 1.1-.4 1.6-.7l2 1.2 1.7-1.7-1.2-2c.3-.5.5-1 .7-1.6l2.3-.6Z" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"/></symbol>
+ <symbol id="i-share" viewBox="0 0 24 24"><path d="M12 3v12M8 7l4-4 4 4M7.5 10H6a1.5 1.5 0 0 0-1.5 1.5v8A1.5 1.5 0 0 0 6 21h12a1.5 1.5 0 0 0 1.5-1.5v-8A1.5 1.5 0 0 0 18 10h-1.5" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"/></symbol>
+ <symbol id="i-globe" viewBox="0 0 24 24"><circle cx="12" cy="12" r="8.5" fill="none" stroke="currentColor" stroke-width="1.6"/><path d="M3.5 12h17M12 3.5c2.6 2.4 3.6 5.3 3.6 8.5s-1 6.1-3.6 8.5c-2.6-2.4-3.6-5.3-3.6-8.5S9.4 5.9 12 3.5Z" fill="none" stroke="currentColor" stroke-width="1.5"/></symbol>
+ <symbol id="i-xfill" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9" fill="currentColor"/><path d="M9 9l6 6M15 9l-6 6" stroke="var(--scr-card)" stroke-width="1.8" stroke-linecap="round"/></symbol>
+ <symbol id="i-check" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9.5" fill="currentColor"/><path d="M7.8 12.3l2.8 2.8 5.6-6" fill="none" stroke="#fff" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></symbol>
+ <symbol id="i-chev" viewBox="0 0 24 24"><path d="M9.5 5.5L16 12l-6.5 6.5" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/></symbol>
+ <symbol id="i-fit" viewBox="0 0 24 24"><path d="M4 9V4h5M20 9V4h-5M4 15v5h5M20 15v5h-5" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"/></symbol>
+ <symbol id="i-sidebar" viewBox="0 0 24 24"><rect x="3" y="5" width="18" height="14" rx="2.5" fill="none" stroke="currentColor" stroke-width="1.6"/><path d="M9 5v14" stroke="currentColor" stroke-width="1.6"/></symbol>
+ <symbol id="i-inspector" viewBox="0 0 24 24"><rect x="3" y="5" width="18" height="14" rx="2.5" fill="none" stroke="currentColor" stroke-width="1.6"/><path d="M15 5v14" stroke="currentColor" stroke-width="1.6"/></symbol>
+ <symbol id="i-clock" viewBox="0 0 24 24"><circle cx="12" cy="12" r="8.5" fill="none" stroke="currentColor" stroke-width="1.6"/><path d="M12 7.5V12l3 2" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></symbol>
+ <symbol id="i-wifislash" viewBox="0 0 24 24"><path d="M3.5 9.5a12 12 0 0 1 17 0M6.5 12.7a7.6 7.6 0 0 1 11 0M9.6 15.8a3.2 3.2 0 0 1 4.8 0M4 4l16 16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></symbol>
+ <symbol id="i-warn" viewBox="0 0 24 24"><path d="M12 3.8L21 19.5H3L12 3.8Z" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linejoin="round"/><path d="M12 10v4.2" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/><circle cx="12" cy="16.9" r="1.1" fill="currentColor"/></symbol>
+ <symbol id="i-lock" viewBox="0 0 24 24"><rect x="5" y="10.5" width="14" height="9.5" rx="2" fill="none" stroke="currentColor" stroke-width="1.7"/><path d="M8.5 10.5V8a3.5 3.5 0 0 1 7 0v2.5" fill="none" stroke="currentColor" stroke-width="1.7"/></symbol>
+ <symbol id="i-list" viewBox="0 0 24 24"><path d="M9 6.5h11M9 12h11M9 17.5h11" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/><circle cx="4.6" cy="6.5" r="1.3" fill="currentColor"/><circle cx="4.6" cy="12" r="1.3" fill="currentColor"/><circle cx="4.6" cy="17.5" r="1.3" fill="currentColor"/></symbol>
+ <symbol id="i-copy" viewBox="0 0 24 24"><rect x="8" y="8" width="12" height="12" rx="2" fill="none" stroke="currentColor" stroke-width="1.6"/><path d="M16 8V6a2 2 0 0 0-2-2H6a2 2 0 0 0-2 2v8a2 2 0 0 0 2 2h2" fill="none" stroke="currentColor" stroke-width="1.6"/></symbol>
+ <symbol id="i-safari" viewBox="0 0 24 24"><circle cx="12" cy="12" r="8.5" fill="none" stroke="currentColor" stroke-width="1.6"/><path d="M15.5 8.5l-2 5-5 2 2-5 5-2Z" fill="currentColor"/></symbol>
+
+ <symbol id="i-whois" viewBox="0 0 24 24"><rect x="2.8" y="4.8" width="18.4" height="14.4" rx="2.6" fill="none" stroke="currentColor" stroke-width="1.6"/><circle cx="8.4" cy="10.3" r="2.1" fill="currentColor"/><path d="M5.1 16.3c.5-2 1.7-3 3.3-3s2.8 1 3.3 3Z" fill="currentColor"/><path d="M14.2 9.7h4.3M14.2 12.5h4.3M14.2 15.3h2.9" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></symbol>
+ <symbol id="i-refresh" viewBox="0 0 24 24"><path d="M19 12a7 7 0 1 1-2.05-4.95" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/><path d="M17.6 3.6v3.9h-3.9" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></symbol>
+ <symbol id="i-info" viewBox="0 0 24 24"><circle cx="12" cy="12" r="8.5" fill="none" stroke="currentColor" stroke-width="1.6"/><path d="M12 11v5.2" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/><circle cx="12" cy="7.9" r="1.1" fill="currentColor"/></symbol>
+ <symbol id="i-netslash" viewBox="0 0 24 24"><circle cx="12" cy="5" r="2.2" fill="currentColor"/><circle cx="5" cy="18" r="2.2" fill="currentColor"/><circle cx="19" cy="18" r="2.2" fill="currentColor"/><path d="M12 7.2v4.3M12 11.5l-5.5 4.6M12 11.5l5.5 4.6" fill="none" stroke="currentColor" stroke-width="1.6"/><path d="M4 4l16 16" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></symbol>
+ <symbol id="i-question" viewBox="0 0 24 24"><path d="M3.5 7.5a2 2 0 0 1 2-2h4l2 2h7a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2h-13a2 2 0 0 1-2-2Z" fill="none" stroke="currentColor" stroke-width="1.6"/><path d="M10.4 11.6a1.7 1.7 0 1 1 2.4 1.5c-.5.3-.8.6-.8 1.2" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/><circle cx="12" cy="16.4" r=".9" fill="currentColor"/></symbol>
+ <symbol id="i-swap" viewBox="0 0 24 24"><path d="M5 9h13l-3.5-3.5M19 15H6l3.5 3.5" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></symbol>
+ <symbol id="i-hour" viewBox="0 0 24 24"><path d="M7 3.5h10M7 20.5h10M8 3.5c0 4.5 8 4.5 8 8.5s-8 4-8 8.5M16 3.5c0 4.5-8 4.5-8 8.5s8 4 8 8.5" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></symbol>
+ <symbol id="i-device" viewBox="0 0 24 24"><rect x="7" y="2.8" width="10" height="18.4" rx="2.4" fill="none" stroke="currentColor" stroke-width="1.6"/><path d="M10.5 18.2h3" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></symbol>
+
+</svg>
+<header class="top">
+ <div class="brand"><svg xmlns="http://www.w3.org/2000/svg" width="72" height="72" role="img" aria-label="IP Tools app icon" viewBox="0 0 1024 1024">
+  
+  <defs>
+    <linearGradient id="bgh" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#2F7BFF"/>
+      <stop offset="0.55" stop-color="#1747C9"/>
+      <stop offset="1" stop-color="#0A1F66"/>
+    </linearGradient>
+    <radialGradient id="glowh" cx="740" cy="300" r="560" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#7FE6FF" stop-opacity="0.50"/>
+      <stop offset="1" stop-color="#7FE6FF" stop-opacity="0"/>
+    </radialGradient>
+    <mask id="ringCuth" maskUnits="userSpaceOnUse" x="0" y="0" width="1024" height="1024">
+      <rect width="1024" height="1024" fill="#fff"/>
+      <path d="M232 792 L392 560 L600 660 L740 300" fill="none" stroke="#000" stroke-width="108"
+            stroke-linecap="round" stroke-linejoin="round"/>
+    </mask>
+  </defs>
+
+  <rect width="1024" height="1024" fill="url(#bgh)"/>
+  <rect width="1024" height="1024" fill="url(#glowh)"/>
+
+  
+  <g mask="url(#ringCuth)" fill="none" stroke="#FFFFFF" stroke-width="30">
+    <circle cx="740" cy="300" r="146" stroke-opacity="0.95"/>
+    <circle cx="740" cy="300" r="232" stroke-opacity="0.60"/>
+    <circle cx="740" cy="300" r="318" stroke-opacity="0.30"/>
+  </g>
+
+  
+  <path d="M232 792 L392 560 L600 660 L740 300" fill="none" stroke="#FFFFFF" stroke-width="44"
+        stroke-linecap="round" stroke-linejoin="round"/>
+
+  
+  <g fill="#FFFFFF">
+    <circle cx="232" cy="792" r="48"/>
+    <circle cx="392" cy="560" r="44"/>
+    <circle cx="600" cy="660" r="44"/>
+  </g>
+  <g fill="#1747C9">
+    <circle cx="232" cy="792" r="18"/>
+    <circle cx="392" cy="560" r="16"/>
+    <circle cx="600" cy="660" r="16"/>
+  </g>
+
+  
+  <circle cx="740" cy="300" r="82" fill="#FFFFFF"/>
+</svg>
+<div><h1>My IP &amp; Whois</h1><p><b>IP Tools v1.2</b> · design mockups for approval · spec in DESIGN.md §14</p></div></div>
+ <div class="meta"><span>iOS 17+ · iPadOS 17+</span><span>RIPEstat only</span><span>Data Not Collected</span>
+ <button id="theme" type="button" aria-label="Toggle colour theme">Theme: Auto</button></div>
+</header>
+<main class="page">
+<section>
+ <h2>iPhone</h2>
+ <p class="lead">A fourth tab, <b>Whois</b>, opens on your own public IP. Type any IP, prefix, AS number or host name to look it up instead. Sample data is real RIPEstat output captured on 2026-11-25: 8.8.8.8 (ARIN, Google) and 193.0.6.139 / 2001:67c:2e8:22::c100:696 (RIPE NCC) standing in for “your” addresses.</p>
+ <div class="grid">
+<figure class="shot"><div class="phone" role="img" aria-label="Whois tab, My IP mode"><div class="screen"><div class="ui"><div class="sb"><span class="sb-time">9:41</span><span class="island"></span><span class="sb-ic">
+<svg viewBox="0 0 18 12" class="sb-sig" aria-hidden="true"><rect x="0" y="8" width="3" height="4" rx="1"/><rect x="5" y="5.5" width="3" height="6.5" rx="1"/><rect x="10" y="3" width="3" height="9" rx="1"/><rect x="15" y="0" width="3" height="12" rx="1"/></svg>
+<svg viewBox="0 0 16 12" class="sb-wifi" aria-hidden="true"><path d="M8 11.5l2.3-2.6a3.3 3.3 0 0 0-4.6 0L8 11.5ZM3.6 6.6l1.4 1.5a4.3 4.3 0 0 1 6 0l1.4-1.5a6.3 6.3 0 0 0-8.8 0ZM.8 3.6l1.5 1.5a8.3 8.3 0 0 1 11.4 0l1.5-1.5a10.4 10.4 0 0 0-14.4 0Z"/></svg>
+<svg viewBox="0 0 27 13" class="sb-bat" aria-hidden="true"><rect x=".5" y=".5" width="23" height="12" rx="3.5" fill="none" stroke="currentColor" opacity=".4"/><rect x="2" y="2" width="17" height="9" rx="2"/><path d="M25 4.5v4a2 2 0 0 0 0-4Z" opacity=".4"/></svg></span></div>
+<div class="tb"><span class="tbtn"><svg><use href="#i-refresh"/></svg></span><span class="tbtn"><svg><use href="#i-share"/></svg></span></div>
+<h1 class="lt">Whois</h1>
+<div class="target"><div class="field"><svg><use href="#i-whois"/></svg><span class="val ph">IP, prefix, ASN or hostname</span></div><span class="btn dis">Look Up</span></div>
+<p class="sec">Your public IP</p>
+<div class="card">
+ <div class="iprow sel"><span class="fam">IPv4</span><div class="grow"><div class="ip">193.0.6.139</div><small>www.ripe.net</small></div><span class="cpy"><svg><use href="#i-copy"/></svg></span></div>
+ <div class="iprow"><span class="fam">IPv6</span><div class="grow"><div class="ip v6">2001:67c:2e8:22::c100:696</div><small>No reverse DNS</small></div><span class="cpy"><svg><use href="#i-copy"/></svg></span></div>
+</div>
+<p class="foot-n">As RIPEstat sees this app’s connection · 9:41</p>
+<div class="segrow"><span>Whois for</span><div class="seg"><span class="on">IPv4</span><span>IPv6</span></div></div>
+<p class="sec">Your network</p>
+<div class="card"><div class="sumhd"><b class="mono">193.0.0.0/21</b><small>RIPE-NCC · RIPE Network Coordination Centre</small></div>
+<ul class="kv"><li><span class="k">Holder</span><span class="v">RIPE Network Coordination Centre<small>from description · ORG-RIEN1-RIPE</small></span></li><li><span class="k">Country</span><span class="v">🇳🇱 Netherlands</span></li><li><span class="k">Registry</span><span class="v">RIPE NCC · ASSIGNED PA</span></li><li><span class="k">Origin AS</span><span class="v"><span class="asn">AS3333</span> RIPE NCC <span class="muted">›</span></span></li><li><span class="k">Abuse</span><span class="v link">abuse@ripe.net</span></li><li><span class="k">Registered</span><span class="v">17 Mar 2003 <span class="muted">· changed 19 Mar 2026</span></span></li></ul></div>
+<ul class="card list"><li class="row"><span class="grow">Raw records</span><span class="muted sm">1 object · 1 route</span><svg class="chev"><use href="#i-chev"/></svg></li></ul>
+<nav class="tabbar four" aria-label="Tabs"><span class="tab"><svg><use href="#i-ping"/></svg><b>Ping</b></span><span class="tab"><svg><use href="#i-trace"/></svg><b>Traceroute</b></span><span class="tab"><svg><use href="#i-bgp"/></svg><b>BGP Map</b></span><span class="tab on"><svg><use href="#i-whois"/></svg><b>Whois</b></span></nav><span class="homebar"></span></div></div></div>
+<figcaption><b>Whois · My IP (default)</b><span>Opens on your public IPv4 and IPv6, each checked separately. IPv4 is selected; the card below is the whois of that address. Every field that isn’t straight from the registry says where it came from.</span></figcaption></figure>
+<figure class="shot"><div class="phone" role="img" aria-label="Whois result for 8.8.8.8"><div class="screen"><div class="ui"><div class="sb"><span class="sb-time">9:41</span><span class="island"></span><span class="sb-ic">
+<svg viewBox="0 0 18 12" class="sb-sig" aria-hidden="true"><rect x="0" y="8" width="3" height="4" rx="1"/><rect x="5" y="5.5" width="3" height="6.5" rx="1"/><rect x="10" y="3" width="3" height="9" rx="1"/><rect x="15" y="0" width="3" height="12" rx="1"/></svg>
+<svg viewBox="0 0 16 12" class="sb-wifi" aria-hidden="true"><path d="M8 11.5l2.3-2.6a3.3 3.3 0 0 0-4.6 0L8 11.5ZM3.6 6.6l1.4 1.5a4.3 4.3 0 0 1 6 0l1.4-1.5a6.3 6.3 0 0 0-8.8 0ZM.8 3.6l1.5 1.5a8.3 8.3 0 0 1 11.4 0l1.5-1.5a10.4 10.4 0 0 0-14.4 0Z"/></svg>
+<svg viewBox="0 0 27 13" class="sb-bat" aria-hidden="true"><rect x=".5" y=".5" width="23" height="12" rx="3.5" fill="none" stroke="currentColor" opacity=".4"/><rect x="2" y="2" width="17" height="9" rx="2"/><path d="M25 4.5v4a2 2 0 0 0 0-4Z" opacity=".4"/></svg></span></div>
+<div class="inl"><span></span><b>Whois</b><span class="tb2"><span class="tbtn"><svg><use href="#i-share"/></svg></span></span></div>
+<div class="target"><div class="field"><svg><use href="#i-whois"/></svg><span class="val">8.8.8.8</span><svg class="clr"><use href="#i-xfill"/></svg></div><span class="btn go">Look Up</span></div>
+<div class="ctxline"><span class="lnk"><svg class="chev-l"><use href="#i-chev"/></svg> My IP</span><span>dns.google · ARIN</span></div>
+<div class="card"><div class="sumhd"><b class="mono">8.8.8.0/24</b><small>GOGL · Google LLC</small></div>
+<ul class="kv"><li><span class="k">Organization</span><span class="v">Google LLC<small>GOGL</small></span></li><li><span class="k">Range</span><span class="v"><span class="mono">8.8.8.0 – 8.8.8.255</span></span></li><li><span class="k">Country</span><span class="v">🇺🇸 United States</span></li><li><span class="k">Registry</span><span class="v">ARIN · Direct Allocation</span></li><li><span class="k">Origin AS</span><span class="v"><span class="asn">AS15169</span> Google <span class="muted">›</span></span></li><li><span class="k">Abuse</span><span class="v link">network-abuse@google.com</span></li><li><span class="k">Location</span><span class="v">United States <span class="muted">· approx.</span></span></li><li><span class="k">Registered</span><span class="v">28 Dec 2023</span></li></ul></div>
+<div class="acts"><span><svg><use href="#i-ping"/></svg>Ping</span><span><svg><use href="#i-trace"/></svg>Traceroute</span><span><svg><use href="#i-bgp"/></svg>Map in BGP</span></div>
+<ul class="card list"><li class="row"><span class="grow">Registry records</span><span class="muted sm">4 objects</span><svg class="chev"><use href="#i-chev"/></svg></li><li class="row"><span class="grow">Routing registry (IRR)</span><span class="muted sm">1 route · RADB</span><svg class="chev"><use href="#i-chev"/></svg></li></ul>
+<p class="foot-n" style="margin-top:0">Source: ARIN whois via RIPEstat · updated 13:40 UTC</p>
+<nav class="tabbar four" aria-label="Tabs"><span class="tab"><svg><use href="#i-ping"/></svg><b>Ping</b></span><span class="tab"><svg><use href="#i-trace"/></svg><b>Traceroute</b></span><span class="tab"><svg><use href="#i-bgp"/></svg><b>BGP Map</b></span><span class="tab on"><svg><use href="#i-whois"/></svg><b>Whois</b></span></nav><span class="homebar"></span></div></div></div>
+<figcaption><b>Whois · custom lookup (ARIN)</b><span>Look Up 8.8.8.8: one summary normalised across RIRs, then Ping / Traceroute / Map in BGP and the raw records. ‹ My IP returns to your own address.</span></figcaption></figure>
+<figure class="shot"><div class="phone" role="img" aria-label="Raw records for 8.8.8.8"><div class="screen"><div class="ui"><div class="sb"><span class="sb-time">9:41</span><span class="island"></span><span class="sb-ic">
+<svg viewBox="0 0 18 12" class="sb-sig" aria-hidden="true"><rect x="0" y="8" width="3" height="4" rx="1"/><rect x="5" y="5.5" width="3" height="6.5" rx="1"/><rect x="10" y="3" width="3" height="9" rx="1"/><rect x="15" y="0" width="3" height="12" rx="1"/></svg>
+<svg viewBox="0 0 16 12" class="sb-wifi" aria-hidden="true"><path d="M8 11.5l2.3-2.6a3.3 3.3 0 0 0-4.6 0L8 11.5ZM3.6 6.6l1.4 1.5a4.3 4.3 0 0 1 6 0l1.4-1.5a6.3 6.3 0 0 0-8.8 0ZM.8 3.6l1.5 1.5a8.3 8.3 0 0 1 11.4 0l1.5-1.5a10.4 10.4 0 0 0-14.4 0Z"/></svg>
+<svg viewBox="0 0 27 13" class="sb-bat" aria-hidden="true"><rect x=".5" y=".5" width="23" height="12" rx="3.5" fill="none" stroke="currentColor" opacity=".4"/><rect x="2" y="2" width="17" height="9" rx="2"/><path d="M25 4.5v4a2 2 0 0 0 0-4Z" opacity=".4"/></svg></span></div>
+<div class="inl"><span class="lnk sm"><svg class="chev-l"><use href="#i-chev"/></svg> 8.8.8.8</span><b>Raw Records</b><span class="tb2"><span class="tbtn"><svg><use href="#i-share"/></svg></span></span></div>
+<p class="sec">Registry records · ARIN · 4 objects</p>
+<div class="card"><div class="rawhd"><span>Network · 8.8.8.0/24</span><span class="tag green">Used in summary</span></div>
+<ul class="raw"><li><span class="k">NetRange</span><span class="v">8.8.8.0 - 8.8.8.255</span></li><li><span class="k">CIDR</span><span class="v">8.8.8.0/24</span></li><li><span class="k">NetName</span><span class="v">GOGL</span></li><li><span class="k">NetHandle</span><span class="v">NET-8-8-8-0-2</span></li><li><span class="k">Parent</span><span class="v">NET8 (NET-8-0-0-0-0)</span></li><li><span class="k">NetType</span><span class="v">Direct Allocation</span></li><li><span class="k">OriginAS</span><span class="v"></span></li><li><span class="k">Organization</span><span class="v">Google LLC (GOGL)</span></li><li><span class="k">RegDate</span><span class="v">2023-12-28</span></li><li><span class="k">Ref</span><span class="v link">https://rdap.arin.net/registry/ip/8.8.8.0</span></li><li><span class="k">source</span><span class="v">ARIN</span></li></ul></div>
+<div class="card"><div class="rawhd"><span>Abuse contact · ABUSE5250-ARIN</span></div>
+<ul class="raw"><li><span class="k">OrgAbuseHandle</span><span class="v">ABUSE5250-ARIN</span></li><li><span class="k">OrgAbuseName</span><span class="v">Abuse</span></li><li><span class="k">OrgAbusePhone</span><span class="v">+1-650-253-0000</span></li><li><span class="k">OrgAbuseEmail</span><span class="v link">network-abuse@google.com</span></li><li><span class="k">OrgAbuseRef</span><span class="v link">https://rdap.arin.net/registry/entity/ABUSE5250-ARIN</span></li></ul></div>
+<div class="card"><div class="rawhd"><span>Organization · Google LLC</span></div>
+<ul class="raw"><li><span class="k">OrgName</span><span class="v">Google LLC</span></li><li><span class="k">OrgId</span><span class="v">GOGL</span></li><li><span class="k">Address</span><span class="v">1600 Amphitheatre Parkway</span></li><li><span class="k">City</span><span class="v">Mountain View</span></li><li><span class="k">StateProv</span><span class="v">CA</span></li><li><span class="k">PostalCode</span><span class="v">94043</span></li><li><span class="k">Country</span><span class="v">US</span></li><li><span class="k">RegDate</span><span class="v">2000-03-30</span></li><li><span class="k">Comment</span><span class="v">Please note that the recommended way to file abuse complaints are located in the following links.<div class="more">Show 8 more lines</div></span></li></ul></div>
+<nav class="tabbar four" aria-label="Tabs"><span class="tab"><svg><use href="#i-ping"/></svg><b>Ping</b></span><span class="tab"><svg><use href="#i-trace"/></svg><b>Traceroute</b></span><span class="tab"><svg><use href="#i-bgp"/></svg><b>BGP Map</b></span><span class="tab on"><svg><use href="#i-whois"/></svg><b>Whois</b></span></nav><span class="homebar"></span></div></div></div>
+<figcaption><b>Raw records</b><span>Every object RIPEstat returned, as published: monospaced, selectable, links tappable. The object used for the summary is tagged. Long remarks collapse.</span></figcaption></figure>
+<figure class="shot"><div class="phone" role="img" aria-label="Private address entered"><div class="screen"><div class="ui"><div class="sb"><span class="sb-time">9:41</span><span class="island"></span><span class="sb-ic">
+<svg viewBox="0 0 18 12" class="sb-sig" aria-hidden="true"><rect x="0" y="8" width="3" height="4" rx="1"/><rect x="5" y="5.5" width="3" height="6.5" rx="1"/><rect x="10" y="3" width="3" height="9" rx="1"/><rect x="15" y="0" width="3" height="12" rx="1"/></svg>
+<svg viewBox="0 0 16 12" class="sb-wifi" aria-hidden="true"><path d="M8 11.5l2.3-2.6a3.3 3.3 0 0 0-4.6 0L8 11.5ZM3.6 6.6l1.4 1.5a4.3 4.3 0 0 1 6 0l1.4-1.5a6.3 6.3 0 0 0-8.8 0ZM.8 3.6l1.5 1.5a8.3 8.3 0 0 1 11.4 0l1.5-1.5a10.4 10.4 0 0 0-14.4 0Z"/></svg>
+<svg viewBox="0 0 27 13" class="sb-bat" aria-hidden="true"><rect x=".5" y=".5" width="23" height="12" rx="3.5" fill="none" stroke="currentColor" opacity=".4"/><rect x="2" y="2" width="17" height="9" rx="2"/><path d="M25 4.5v4a2 2 0 0 0 0-4Z" opacity=".4"/></svg></span></div>
+<div class="inl"><span></span><b>Whois</b><span class="tb2"><span class="tbtn"><svg><use href="#i-share"/></svg></span></span></div>
+<div class="target"><div class="field"><svg><use href="#i-whois"/></svg><span class="val">192.168.1.1</span><svg class="clr"><use href="#i-xfill"/></svg></div><span class="btn go">Look Up</span></div>
+<div class="ctxline"><span class="lnk"><svg class="chev-l"><use href="#i-chev"/></svg> My IP</span><span>Checked on this device · no lookup</span></div>
+<div class="card"><div class="local"><svg class="ic"><use href="#i-lock"/></svg><h3>Private address</h3>
+<p><b>192.168.1.1</b> is in 192.168.0.0/16, a private range (RFC 1918). It’s only used inside local networks, so no registry has a whois record for it.</p></div>
+<ul class="kv"><li><span class="k">Range</span><span class="v"><span class="mono">192.168.0.0/16</span></span></li><li><span class="k">Type</span><span class="v">Private use</span></li><li><span class="k">Standard</span><span class="v">RFC 1918</span></li><li><span class="k">On the Internet</span><span class="v">Not routed</span></li></ul></div>
+<div class="acts two"><span><svg><use href="#i-ping"/></svg>Ping</span><span><svg><use href="#i-trace"/></svg>Traceroute</span></div>
+<ul class="card list"><li class="row"><span class="grow">Your public IP is <b class="mono">193.0.6.139</b></span><svg class="chev"><use href="#i-chev"/></svg></li></ul>
+<p class="sec">Also answered locally</p>
+<div class="minis"><span>100.64.0.0/10 · CGNAT</span><span>203.0.113.0/24 · Documentation</span><span>fe80::/10 · Link-local</span><span>fd00::/8 · Unique local</span><span>::ffff:8.8.8.8 → “Look up 8.8.8.8 instead”</span><span>AS64512 · Private ASN</span><span>AS23456 · AS_TRANS</span></div>
+<nav class="tabbar four" aria-label="Tabs"><span class="tab"><svg><use href="#i-ping"/></svg><b>Ping</b></span><span class="tab"><svg><use href="#i-trace"/></svg><b>Traceroute</b></span><span class="tab"><svg><use href="#i-bgp"/></svg><b>BGP Map</b></span><span class="tab on"><svg><use href="#i-whois"/></svg><b>Whois</b></span></nav><span class="homebar"></span></div></div></div>
+<figcaption><b>Private / reserved input</b><span>Answered on the device with no request: IANA special-purpose tables for IPv4, IPv6 and ASNs. Ping and Traceroute stay available for private ranges.</span></figcaption></figure>
+<figure class="shot"><div class="phone" role="img" aria-label="Traceroute hop context menu with Whois actions"><div class="screen"><div class="ui"><div class="sb"><span class="sb-time">9:41</span><span class="island"></span><span class="sb-ic">
+<svg viewBox="0 0 18 12" class="sb-sig" aria-hidden="true"><rect x="0" y="8" width="3" height="4" rx="1"/><rect x="5" y="5.5" width="3" height="6.5" rx="1"/><rect x="10" y="3" width="3" height="9" rx="1"/><rect x="15" y="0" width="3" height="12" rx="1"/></svg>
+<svg viewBox="0 0 16 12" class="sb-wifi" aria-hidden="true"><path d="M8 11.5l2.3-2.6a3.3 3.3 0 0 0-4.6 0L8 11.5ZM3.6 6.6l1.4 1.5a4.3 4.3 0 0 1 6 0l1.4-1.5a6.3 6.3 0 0 0-8.8 0ZM.8 3.6l1.5 1.5a8.3 8.3 0 0 1 11.4 0l1.5-1.5a10.4 10.4 0 0 0-14.4 0Z"/></svg>
+<svg viewBox="0 0 27 13" class="sb-bat" aria-hidden="true"><rect x=".5" y=".5" width="23" height="12" rx="3.5" fill="none" stroke="currentColor" opacity=".4"/><rect x="2" y="2" width="17" height="9" rx="2"/><path d="M25 4.5v4a2 2 0 0 0 0-4Z" opacity=".4"/></svg></span></div>
+<div class="tb"><span class="tbtn"><svg><use href="#i-share"/></svg></span><span class="tbtn"><svg><use href="#i-gear"/></svg></span></div>
+<h1 class="lt">Traceroute</h1>
+<div class="target"><div class="field"><svg><use href="#i-globe"/></svg><span class="val">8.8.8.8</span><svg class="clr"><use href="#i-xfill"/></svg></div><span class="btn go">Start</span></div>
+<div class="card summary"><svg class="ok"><use href="#i-check"/></svg><div><b>Reached dns.google in 10 hops</b><small>8.8.8.8 · AS15169 Google · 12.9 ms</small></div><span class="tbtn" style="margin-left:auto"><svg><use href="#i-whois"/></svg></span></div>
+<div class="th"><span>Hop</span><span class="grow">Host</span><span>avg · 3 probes (ms)</span></div>
+<ul class="card list hops"><li class="hop"><span class="hn">1</span><div class="grow"><b class="mono-ish">router.lan</b><small><span class="asn priv">Private</span> 192.168.1.1</small></div><span class="hr"><b>1.8</b><small>1.8 · 2.0 · 1.7</small></span></li><li class="hop"><span class="hn">2</span><div class="grow"><b class="mono-ish">96.120.24.29</b><small><span class="asn">AS7922 Comcast</span></small></div><span class="hr"><b>9.5</b><small>9.4 · 8.9 · 10.2</small></span></li><li class="hop"><span class="hn">3</span><div class="grow"><b class="mono-ish">po-303-1209-rur02.sanjose.ca.sfba.comcast.net</b><small><span class="asn">AS7922 Comcast</span> 68.86.181.33</small></div><span class="hr"><b>10.3</b><small>10.1 · 9.8 · 11.0</small></span></li><li class="hop"><span class="hn">4</span><div class="grow"><b class="mono-ish">be-232-rar01.santaclara.ca.sfba.comcast.net</b><small><span class="asn">AS7922 Comcast</span> 162.151.79.133</small></div><span class="hr"><b>11.7</b><small>11.6 · 11.2 · 12.4</small></span></li><li class="hop"><span class="hn">5</span><div class="grow"><b class="mono-ish">be-36131-cs03.sunnyvale.ca.ibone.comcast.net</b><small><span class="asn">AS7922 Comcast</span> 96.110.41.121</small></div><span class="hr"><b>12.8</b><small>12.8 · 13.1 · 12.6</small></span></li><li class="hop"><span class="hn">6</span><div class="grow"><b class="mono-ish">be-2312-pe12.529bryant.ca.ibone.comcast.net</b><small><span class="asn">AS7922 Comcast</span> 96.110.44.6</small></div><span class="hr"><b>13.5</b><small>13.4 · 13.0 · 14.2</small></span></li><li class="hop"><span class="hn">7</span><div class="grow"><b class="muted">No reply</b><small class="muted">* &nbsp;* &nbsp;*</small></div><span class="hr muted">—</span></li><li class="hop"><span class="hn">8</span><div class="grow"><b class="mono-ish">142.251.65.111</b><small><span class="asn">AS15169 Google</span></small></div><span class="hr"><b>13.3</b><small>13.9 · 12.7 · 13.3</small></span></li><li class="hop"><span class="hn">9</span><div class="grow"><b class="mono-ish">142.251.226.233</b><small><span class="asn">AS15169 Google</span></small></div><span class="hr"><b>13.2</b><small>13.2 · 12.8 · 13.5</small></span></li><li class="hop dest"><span class="hn">10</span><div class="grow"><b class="mono-ish">dns.google</b><small><span class="asn">AS15169 Google</span> 8.8.8.8</small></div><span class="hr"><b>12.9</b><small>12.9 · 12.6 · 13.1</small></span></li></ul>
+<div class="scrim"></div>
+<div class="lifted"><ul class="list" style="margin:0"><li class="hop dest" style="border:0"><span class="hn">10</span><div class="grow"><b>dns.google</b><small><span class="asn">AS15169 Google</span> 8.8.8.8</small></div><span class="hr"><b>12.9</b><small>12.9 · 12.6 · 13.1</small></span></li></ul></div>
+<ul class="cmenu">
+ <li><span class="l">Ping this hop</span><svg><use href="#i-ping"/></svg></li>
+ <li><span class="l">Map in BGP</span><svg><use href="#i-bgp"/></svg></li>
+ <li class="hl"><span class="l">Whois this hop <span class="tag new">NEW</span></span><svg><use href="#i-whois"/></svg></li>
+ <li class="hl gap"><span class="l">Whois AS15169 <span class="tag new">NEW</span></span><svg><use href="#i-whois"/></svg></li>
+ <li><span class="l">Copy IP</span><svg><use href="#i-copy"/></svg></li>
+ <li><span class="l">Copy Hostname</span><svg><use href="#i-copy"/></svg></li>
+ <li><span class="l">Copy Row</span><svg><use href="#i-copy"/></svg></li>
+</ul>
+<nav class="tabbar four" aria-label="Tabs"><span class="tab"><svg><use href="#i-ping"/></svg><b>Ping</b></span><span class="tab on"><svg><use href="#i-trace"/></svg><b>Traceroute</b></span><span class="tab"><svg><use href="#i-bgp"/></svg><b>BGP Map</b></span><span class="tab"><svg><use href="#i-whois"/></svg><b>Whois</b></span></nav><span class="homebar"></span></div></div></div>
+<figcaption><b>Reached from Traceroute</b><span>Long-press a hop: new “Whois this hop” and “Whois AS15169”. The finished-trace header gets a Whois icon button. BGP AS details gain “Whois AS3356”.</span></figcaption></figure>
+ </div>
+</section>
+<section>
+ <h2>iPad</h2>
+ <p class="lead">Regular width: your public addresses as two tiles above the subject; raw records move into the inspector.</p>
+<figure class="shot wide"><div class="ipad" role="img" aria-label="iPad split view with Whois for 8.8.8.8 and raw records inspector"><div class="screen"><div class="ui">
+<div class="ip-sb"><span>9:41&nbsp; Wed 25 Nov</span><span class="sb-ic"><svg viewBox="0 0 16 12" class="sb-wifi" aria-hidden="true"><path d="M8 11.5l2.3-2.6a3.3 3.3 0 0 0-4.6 0L8 11.5ZM3.6 6.6l1.4 1.5a4.3 4.3 0 0 1 6 0l1.4-1.5a6.3 6.3 0 0 0-8.8 0ZM.8 3.6l1.5 1.5a8.3 8.3 0 0 1 11.4 0l1.5-1.5a10.4 10.4 0 0 0-14.4 0Z"/></svg> 100%</span></div>
+<aside class="side"><div class="side-tb"><svg><use href="#i-sidebar"/></svg></div><h1>IP Tools</h1>
+<p class="ssec">Tools</p>
+<ul class="slist"><li><svg><use href="#i-ping"/></svg>Ping</li><li><svg><use href="#i-trace"/></svg>Traceroute</li><li><svg><use href="#i-bgp"/></svg>BGP Map</li><li class="on"><svg><use href="#i-whois"/></svg>Whois</li></ul>
+<p class="ssec">Recent</p>
+<ul class="slist rec"><li><svg><use href="#i-clock"/></svg>8.8.8.8 <span class="muted sm">· Whois</span></li><li><svg><use href="#i-clock"/></svg>AS13335 <span class="muted sm">· BGP Map</span></li><li><svg><use href="#i-clock"/></svg>1.1.1.1 <span class="muted sm">· Ping</span></li><li><svg><use href="#i-clock"/></svg>2606:4700::/32</li></ul>
+<ul class="slist foot"><li><svg><use href="#i-gear"/></svg>Settings</li></ul>
+</aside>
+<main class="det">
+<div class="det-tb"><b>Whois</b><div class="field"><svg><use href="#i-whois"/></svg><span class="val">8.8.8.8</span><svg class="clr"><use href="#i-xfill"/></svg></div><span class="btn go">Look Up</span>
+<span class="tbtn" style="margin-left:auto"><svg><use href="#i-share"/></svg></span><span class="tbtn on"><svg><use href="#i-inspector"/></svg></span></div>
+<div class="ctxline"><span class="lnk"><svg class="chev-l"><use href="#i-chev"/></svg> My IP</span><span>· dns.google · ARIN · updated 13:40 UTC</span></div>
+<div class="wcol">
+  <div class="card tiles">
+   <div class="iprow"><span class="fam">IPv4</span><div class="grow"><div class="ip">193.0.6.139</div><small>www.ripe.net · tap for its whois</small></div><span class="cpy"><svg><use href="#i-copy"/></svg></span></div>
+   <div class="iprow"><span class="fam">IPv6</span><div class="grow"><div class="ip v6">2001:67c:2e8:22::c100:696</div><small>No reverse DNS</small></div><span class="cpy"><svg><use href="#i-copy"/></svg></span></div>
+  </div>
+  <ul class="card list"><li class="row"><svg class="ric"><use href="#i-device"/></svg><span class="grow">This device <span class="muted sm">· Wi-Fi 192.168.1.23 · behind NAT</span></span><svg class="chev"><use href="#i-chev"/></svg></li></ul>
+  <p class="sec">Whois · 8.8.8.8</p>
+  <div class="card"><div class="sumhd"><b class="mono">8.8.8.0/24</b><small>GOGL · Google LLC</small></div>
+  <ul class="kv"><li><span class="k">Organization</span><span class="v">Google LLC <span class="muted">· GOGL</span></span></li><li><span class="k">Range</span><span class="v"><span class="mono">8.8.8.0 – 8.8.8.255</span></span></li><li><span class="k">Country</span><span class="v">🇺🇸 United States</span></li><li><span class="k">Registry</span><span class="v">ARIN · Direct Allocation</span></li><li><span class="k">Origin AS</span><span class="v"><span class="asn">AS15169</span> Google LLC <span class="muted">›</span></span></li><li><span class="k">Abuse</span><span class="v link">network-abuse@google.com</span></li><li><span class="k">Location</span><span class="v">United States <span class="muted">· approx. (MaxMind GeoLite2)</span></span></li><li><span class="k">Registered</span><span class="v">28 Dec 2023</span></li><li><span class="k">Reverse DNS</span><span class="v">dns.google</span></li></ul>
+  <div class="note">Registered route object: 8.8.8.0/24 origin AS15169 (RADB), matches BGP.</div></div>
+  <div class="acts"><span><svg><use href="#i-ping"/></svg>Ping</span><span><svg><use href="#i-trace"/></svg>Traceroute</span><span><svg><use href="#i-bgp"/></svg>Map in BGP</span></div>
+</div>
+</main>
+<aside class="insp"><p class="ins-k">Raw records</p><h3>ARIN · 4 objects</h3>
+<div class="rawhd"><span>Network · 8.8.8.0/24</span><span class="tag green">Used in summary</span></div>
+<ul class="raw"><li><span class="k">NetRange</span><span class="v">8.8.8.0 - 8.8.8.255</span></li><li><span class="k">CIDR</span><span class="v">8.8.8.0/24</span></li><li><span class="k">NetName</span><span class="v">GOGL</span></li><li><span class="k">NetHandle</span><span class="v">NET-8-8-8-0-2</span></li><li><span class="k">Parent</span><span class="v">NET8 (NET-8-0-0-0-0)</span></li><li><span class="k">NetType</span><span class="v">Direct Allocation</span></li><li><span class="k">Organization</span><span class="v">Google LLC (GOGL)</span></li><li><span class="k">RegDate</span><span class="v">2023-12-28</span></li><li><span class="k">Ref</span><span class="v link">rdap.arin.net/registry/ip/8.8.8.0</span></li></ul>
+<div class="rawhd"><span>Abuse contact · ABUSE5250-ARIN</span></div>
+<ul class="raw"><li><span class="k">OrgAbuseName</span><span class="v">Abuse</span></li><li><span class="k">OrgAbusePhone</span><span class="v">+1-650-253-0000</span></li><li><span class="k">OrgAbuseEmail</span><span class="v link">network-abuse@google.com</span></li></ul>
+<div class="rawhd"><span>Organization · Google LLC</span></div>
+<ul class="raw"><li><span class="k">OrgName</span><span class="v">Google LLC</span></li><li><span class="k">OrgId</span><span class="v">GOGL</span></li><li><span class="k">City</span><span class="v">Mountain View</span></li><li><span class="k">Country</span><span class="v">US</span></li><li><span class="k">RegDate</span><span class="v">2000-03-30</span></li></ul>
+<div class="rawhd"><span>Routing registry (IRR) · RADB</span></div>
+<ul class="raw"><li><span class="k">route</span><span class="v">8.8.8.0/24</span></li><li><span class="k">origin</span><span class="v">15169</span></li><li><span class="k">descr</span><span class="v">Google</span></li><li><span class="k">mnt-by</span><span class="v">MAINT-AS15169</span></li></ul>
+</aside>
+</div></div></div>
+<figcaption><b>iPad · Whois with raw-records inspector</b><span>Sidebar gains Whois. Your two public addresses stay on top as tiles (tap one for its whois); This device is one row; the subject fills the detail column; the inspector (default on when the window is ≥ 1100 pt) shows the raw records. Narrow windows fall back to the iPhone layout.</span></figcaption></figure>
+</section>
+<section>
+ <h2>States</h2>
+ <p class="lead">My IP and lookup states beyond the screens above. Errors reuse the shared <code>ErrorStateView</code> copy where it overlaps with BGP Map.</p>
+<div class="states">
+<div class="st"><span class="spin" aria-hidden="true"></span><b>Checking</b><p>Both address rows show “Checking…”; the network card is a skeleton. Each row fills in as soon as its family answers (usually under 1 s).</p></div>
+<div class="st"><svg class="st-i"><use href="#i-netslash"/></svg><b>IPv4 only</b><p>IPv6 row: “No IPv6 on this network” (no request when the path reports no IPv6). The IPv4 | IPv6 switch is hidden.</p></div>
+<div class="st"><svg class="st-i"><use href="#i-netslash"/></svg><b>IPv6-only network</b><p>IPv4 row: “IPv4 not available (IPv6-only network)”. With 464XLAT the carrier’s NAT64 IPv4 is shown normally.</p></div>
+<div class="st"><svg class="st-i"><use href="#i-wifislash"/></svg><b>Offline</b><p>“Connect to the Internet to see your public IP.” Look Up disabled. The This device card still shows the Wi-Fi address.</p></div>
+<div class="st"><svg class="st-i"><use href="#i-info"/></svg><b>LACNIC (no records)</b><p>200.160.2.3: “LACNIC doesn’t share whois records through RIPEstat.” Network operator NIC.BR (from AS22548), BR (RIR statistics), origin AS22548.</p></div>
+<div class="st"><svg class="st-i"><use href="#i-globe"/></svg><b>Host name</b><p>apple.com → 17.253.144.10. “This is the network that hosts the address, not the domain’s registration.”</p></div>
+<div class="st"><svg class="st-i"><use href="#i-swap"/></svg><b>Mapped / NAT64 IPv6</b><p>::ffff:8.8.8.8 or 64:ff9b::808:808 → local card plus “Look up 8.8.8.8 instead”.</p></div>
+<div class="st"><svg class="st-i warn"><use href="#i-warn"/></svg><b>Partial</b><p>Whois failed but BGP worked: card with the BGP, country and abuse rows, “Registry record unavailable right now.” + Try Again.</p></div>
+<div class="st"><svg class="st-i"><use href="#i-question"/></svg><b>Not found</b><p>“No Registry Record. No registry has a record for 2001:db9::1. It may be unallocated.”</p></div>
+<div class="st"><svg class="st-i warn"><use href="#i-hour"/></svg><b>RIPEstat busy</b><p>429 or 5xx (including the nginx 502 HTML page seen during testing): “RIPEstat is busy. Try again in a moment.” + Try Again.</p></div>
+</div>
+</section>
+<section>
+ <h2>Export</h2>
+<div class="cols">
+<div><h3>Share Summary (⌘⇧C)</h3><pre class="export mono">WHOIS 8.8.8.8 (dns.google)
+Network     8.8.8.0/24  (8.8.8.0 - 8.8.8.255)
+Name        GOGL  (NET-8-8-8-0-2)
+Org         Google LLC  (GOGL)
+Country     US
+Registry    ARIN · Direct Allocation
+Origin AS   AS15169 Google LLC  (BGP)
+Abuse       network-abuse@google.com
+Registered  2023-12-28
+Source: ARIN whois via RIPEstat, 2026-11-25 13:40 UTC
+— IP Tools for iOS, 2026-11-25 13:52 UTC</pre></div>
+<div><h3>Share (My IP mode)</h3><pre class="export mono">My public IP — 2026-11-25 09:41 UTC
+IPv4  193.0.6.139                 www.ripe.net
+IPv6  2001:67c:2e8:22::c100:696
+Network  193.0.0.0/21 · RIPE-NCC · AS3333 RIPE NCC · NL · RIPE NCC
+Abuse    abuse@ripe.net
+— IP Tools for iOS</pre><p class="lead" style="margin:8px 0 0;font-size:13px">The approximate location is never exported. Share Full Record appends every raw object as <code>key:  value</code> lines.</p></div>
+</div>
+</section>
+<section>
+ <h2>Navigation &amp; data</h2>
+<div class="legend">
+<div class="lg"><span class="minitab" aria-hidden="true"><span><svg><use href="#i-ping"/></svg>Ping</span><span><svg><use href="#i-trace"/></svg>Trace</span><span><svg><use href="#i-bgp"/></svg>BGP</span><span class="on"><svg><use href="#i-whois"/></svg>Whois</span></span><p><b>Fourth tab “Whois”</b> (<code>person.text.rectangle</code>), appended so ⌘1–3 keep their meaning; Whois is ⌘4. It opens on your own IP, so “my IP” needs no typing.</p></div>
+<div class="lg"><span class="rttkey" style="width:120px"><span><span class="tag green">registry</span></span><span>from description</span><span>from AS24940</span><span>from RIR statistics</span></span><p><b>Provenance, always visible.</b> RIPE-style records carry an org handle, not a name; LACNIC has no records. Fallback values are labelled where they appear and in the export.</p></div>
+</div>
+<ul class="notes">
+ <li><b>Both IP families:</b> two <code>whats-my-ip</code> calls over <code>NWConnection</code> pinned with <code>NWProtocolIP.Options.version</code> (.v4 / .v6). <code>URLSession</code> can’t force a family. Skipped when <code>NWPath</code> reports no IPv6; URLSession fallback if both fail.</li>
+ <li><b>Data:</b> RIPEstat only — <code>whois</code>, <code>network-info</code> / <code>prefix-overview</code> / <code>as-overview</code>, <code>abuse-contact-finder</code>, <code>rir-stats-country</code>, <code>as-names</code>, <code>maxmind-geo-lite</code>. ARIN IPv6 addresses retry with the covering prefix.</li>
+ <li><b>Cross-links:</b> Traceroute hop menu and header, Ping header, BGP AS details and toolbar menu → Whois. Whois → Ping, Traceroute, Map in BGP, and origin-AS drill-down.</li>
+ <li><b>Privacy:</b> label stays “Data Not Collected”. Your public IP lives in memory only and is forgotten on network change. Local addresses never leave the device. Screenshot mode injects fixed addresses.</li>
+</ul>
+</section>
+<section>
+ <h2>Decisions to confirm</h2>
+ <p class="lead">Each has a recommended pick (green). Details and reasons are in DESIGN.md §14.18.</p>
+<ol class="decisions">
+<li><span class="pick">Pick</span><b>D1 Placement:</b> a fourth tab “Whois” whose default content is My IP. <i>Alt:</i> tab named “My IP”; inside BGP Map.</li>
+<li><span class="pick">Pick</span><b>D2 Data source:</b> RIPEstat only, no RDAP. <i>Alt:</i> RDAP (adds rdap.org and five RIR hosts), or RDAP as a later opt-in.</li>
+<li><span class="pick">Pick</span><b>D3 Families:</b> check IPv4 and IPv6 separately; show IPv4’s whois first. <i>Alt:</i> one URLSession call (one family), or IPv6 first.</li>
+<li><span class="pick">Pick</span><b>D4 Location:</b> one “approx.” row from MaxMind GeoLite2 via RIPEstat, on screen only. <i>Alt:</i> no location.</li>
+<li><span class="pick">Pick</span><b>D5 Input:</b> IP, prefix, ASN and host name (resolved on device, “not domain whois” line). <i>Alt:</i> IP only.</li>
+<li><span class="pick">Pick</span><b>D6 Auto-load:</b> fetch My IP when the tab opens and on network change. <i>Alt:</i> a “Show my IP” button.</li>
+<li><span class="pick">Pick</span><b>D7 This device:</b> local addresses + NAT/CGNAT hint. <i>Alt:</i> omit.</li>
+<li><span class="pick">Pick</span><b>D8 Store text:</b> keep the name; subtitle “Whois, BGP Map &amp; ASN Lookup” (27/30); keywords <code>my,address,network,looking,glass,tracert,icmp,latency,ipv6,prefix,route,path,hop,jitter,ripe,isp,dns</code> (100/100). <i>Alt:</i> subtitle “My IP, Whois &amp; BGP Map”.</li>
+<li><span class="pick">Pick</span><b>D9 Screenshot:</b> add My IP &amp; Whois as screenshot #2 on every device size. <i>Alt:</i> #5.</li>
+<li><span class="pick">Pick</span><b>D10 Entry points:</b> hop menu, Ping/Traceroute header buttons, BGP AS details and toolbar menu. <i>Alt:</i> hop menu only.</li>
+</ol>
+</section>
+</main>
+<footer class="foot">IP Tools · design v1.2 (My IP &amp; Whois) · github.com/ahmadrezaei/ip-tools</footer>
+<script>
+(function () {
+  var root = document.documentElement, btn = document.getElementById('theme');
+  var modes = ['auto', 'light', 'dark'], i = 0;
+  try { var s = localStorage.getItem('iptools-theme'); if (s && modes.indexOf(s) > -1) i = modes.indexOf(s); } catch (e) {}
+  function apply() {
+    var m = modes[i];
+    if (m === 'auto') root.removeAttribute('data-theme'); else root.setAttribute('data-theme', m);
+    btn.textContent = 'Theme: ' + m.charAt(0).toUpperCase() + m.slice(1);
+    try { localStorage.setItem('iptools-theme', m); } catch (e) {}
+  }
+  btn.addEventListener('click', function () { i = (i + 1) % modes.length; apply(); });
+  apply();
+})();
+</script>
+</body>
+</html>

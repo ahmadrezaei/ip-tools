@@ -5,12 +5,13 @@ import Foundation
 
 enum DateParsing {
     /// RIPEstat timestamps are ISO-8601 without timezone (UTC), with optional fractional seconds.
-    /// Also accepts a trailing `Z`, a `±hh:mm` offset and a space instead of `T`.
+    /// Also accepts a trailing `Z`, a `±hh:mm` offset, a space instead of `T`, and a bare `yyyy-MM-dd` (midnight UTC).
     static func parse(_ string: String?) -> Date? {
         guard let string, !string.isEmpty else { return nil }
         let b = Array(string.utf8)
-        guard b.count >= 19, b[4] == 0x2D, b[7] == 0x2D, b[10] == 0x54 || b[10] == 0x20,
-              b[13] == 0x3A, b[16] == 0x3A else { return nil }
+        let dateOnly = b.count == 10 && b[4] == 0x2D && b[7] == 0x2D
+        guard dateOnly || (b.count >= 19 && b[4] == 0x2D && b[7] == 0x2D && (b[10] == 0x54 || b[10] == 0x20)
+                           && b[13] == 0x3A && b[16] == 0x3A) else { return nil }
         func num(_ from: Int, _ len: Int) -> Int? {
             var v = 0
             for i in from..<(from + len) {
@@ -20,10 +21,12 @@ enum DateParsing {
             return v
         }
         guard let year = num(0, 4), let month = num(5, 2), let day = num(8, 2),
-              let hour = num(11, 2), let minute = num(14, 2), let second = num(17, 2),
-              (1...12).contains(month), (1...31).contains(day), hour < 24, minute < 60, second < 61
-        else { return nil }
-        var index = 19
+              (1...12).contains(month), (1...31).contains(day) else { return nil }
+        let hour = dateOnly ? 0 : num(11, 2)
+        let minute = dateOnly ? 0 : num(14, 2)
+        let second = dateOnly ? 0 : num(17, 2)
+        guard let hour, let minute, let second, hour < 24, minute < 60, second < 61 else { return nil }
+        var index = dateOnly ? b.count : 19
         var fraction = 0.0
         if index < b.count, b[index] == 0x2E {
             index += 1

@@ -195,6 +195,11 @@ import SharedUI
         map()
     }
 
+    /// Opens Whois for an AS number or prefix (`AS3356`, `1.1.1.0/24`).
+    public func whois(_ resource: String) {
+        router.open(.whois, target: resource, autostart: true)
+    }
+
     public func select(_ id: NodeID?) {
         selection = (id == selection) ? nil : id
     }

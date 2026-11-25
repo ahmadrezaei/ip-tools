@@ -6,9 +6,31 @@ import Testing
 @testable import RIPEstat
 
 enum Fixture {
-    static func data(_ name: String) throws -> Data {
-        let url = try #require(Bundle.module.url(forResource: name, withExtension: "json", subdirectory: "Fixtures"))
+    static func data(_ name: String, ext: String = "json") throws -> Data {
+        let url = try #require(Bundle.module.url(forResource: name, withExtension: ext, subdirectory: "Fixtures"))
         return try Data(contentsOf: url)
+    }
+
+    /// A hand-built raw HTTP/1.1 response (`http_<name>.bin`).
+    static func http(_ name: String) throws -> Data { try data("http_\(name)", ext: "bin") }
+
+    static func date(_ text: String) -> Date? { DateParsing.parse(text) }
+
+    // Decoded fixtures for the whois tests.
+    static func whois(_ key: String, resource: String? = nil) throws -> WhoisResponse {
+        try WhoisParsing.whois(data("whois_\(key)"), resource: resource ?? key)
+    }
+
+    static func network(_ key: String) throws -> NetworkInfo { try RIPEstatParsing.networkInfo(data("network-info_\(key)")) }
+    static func abuse(_ key: String) throws -> AbuseContacts { try WhoisParsing.abuse(data("abuse-contact-finder_\(key)")) }
+    static func country(_ key: String) throws -> String? { try WhoisParsing.country(data("rir-stats-country_\(key)")) }
+
+    static func asOverview(_ asn: UInt32) throws -> ASOverview {
+        try RIPEstatParsing.asOverview(data("as-overview_AS\(asn)"), asn: asn)
+    }
+
+    static func names() throws -> [UInt32: String] {
+        try RIPEstatParsing.asNames(data("as-names_15169-3333-22548-24940"))
     }
 }
 

@@ -1,0 +1,9 @@
+HTTP/1.1 429 Too Many Requests
+Server: nginx
+Date: Wed, 25 Nov 2026 14:40:00 GMT
+Content-Type: application/json
+Content-Length: 89
+Retry-After: 5
+Connection: close
+
+{"messages":[["error","Too many requests"]],"status":"error","status_code":429,"data":{}}

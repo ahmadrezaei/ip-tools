@@ -20,3 +20,6 @@ xcuserdata/
 *.dSYM.zip
 *.dSYM
 .swiftpm/xcode/xcuserdata/
+
+# Local agent worktrees
+.claude/worktrees/

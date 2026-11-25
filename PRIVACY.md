@@ -7,14 +7,20 @@ IP Tools does not collect, store on a server, or share any personal data. The Ap
 The app talks to exactly three kinds of destinations:
 
 1. **The target you probe.** Ping, traceroute and the *your path* overlay on the BGP Map send ICMP packets only to the host, address or prefix you enter.
-2. **The system DNS resolver**, to turn host names into addresses.
+2. **The system DNS resolver**, to turn host names into addresses and, in Whois, to look up the host name of an address.
 3. **`https://stat.ripe.net/data/...` (RIPEstat, run by the RIPE NCC).** This is the only place data goes besides the target you probe and your DNS resolver. The host names, IP addresses, prefixes or AS numbers you enter in BGP Map are sent to RIPEstat. If "Look up networks (ASN, via RIPEstat)" is on, the public IP addresses of traceroute hops are sent as well. These requests carry `sourceapp=ahmadrezaei-iptools`, as RIPE NCC asks, and no user identifiers. When the BGP Map draws *your path*, the app asks RIPEstat which public IP address your connection uses and which network it belongs to, and looks up the public addresses of the routers on the way (if "Look up networks" is on). RIPEstat already sees that address on every request. The app keeps it in memory only and never sends it anywhere else. The setting can be turned off, and the Traceroute settings and the About screen say this in plain words.
+
+   **Whois and My IP.** The IP address, prefix or AS number you look up in Whois is sent to RIPEstat. If you enter a host name, it is resolved on your device and only the resulting address is sent. **My IP** asks RIPEstat which public address your connection uses, once over IPv4 and once over IPv6, and then looks that address up the same way. RIPEstat already sees that address on every request. The app keeps it in memory only, never stores it, refreshes it when your network changes, and never sends it anywhere else. The approximate location shown for an address is MaxMind GeoLite2 data delivered by RIPEstat; the app doesn't use your device's location. Links inside whois records, such as a registry web page or an e-mail address, open in Safari or Mail only when you tap them.
 
 Nothing else leaves the device. There is no analytics and no tracking.
 
 ## Stored on your device
 
-Recent targets (up to 20) and your settings are kept locally in `UserDefaults`. **Clear History** in About removes the recents. Nothing is synced (no iCloud) and nothing leaves the device.
+Recent targets (up to 20, including Whois lookups) and your settings are kept locally in `UserDefaults`. **Clear History** in About removes the recents. Nothing is synced (no iCloud) and nothing leaves the device.
+
+## Your device's local addresses
+
+The Whois tab shows this device's own network addresses (for example its Wi-Fi address) so you can compare them with your public IP. They are read on the device and are never sent anywhere.
 
 ## Local network
 

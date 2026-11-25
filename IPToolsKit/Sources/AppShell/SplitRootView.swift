@@ -6,6 +6,7 @@ import PingFeature
 import SharedUI
 import SwiftUI
 import TraceFeature
+import WhoisFeature
 
 struct SplitRootView: View {
     let environment: AppEnvironment
@@ -21,6 +22,7 @@ struct SplitRootView: View {
                 case .ping: PingView(model: environment.ping)
                 case .traceroute: TraceView(model: environment.trace)
                 case .bgp: BGPMapView(model: environment.bgp)
+                case .whois: WhoisView(model: environment.whois)
                 }
             }
             .id(router.selectedTool)

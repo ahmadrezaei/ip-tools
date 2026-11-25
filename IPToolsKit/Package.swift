@@ -21,11 +21,12 @@ let package = Package(
         .target(name: "PingFeature", dependencies: ["NetCore", "SharedUI"]),
         .target(name: "TraceFeature", dependencies: ["NetCore", "RIPEstat", "SharedUI"]),
         .target(name: "BGPFeature", dependencies: ["RIPEstat", "BGPGraph", "NetCore", "SharedUI"]),
+        .target(name: "WhoisFeature", dependencies: ["NetCore", "RIPEstat", "SharedUI"]),
         .target(
             name: "AppShell",
             dependencies: [
                 "NetCore", "RIPEstat", "BGPGraph", "SharedUI",
-                "PingFeature", "TraceFeature", "BGPFeature",
+                "PingFeature", "TraceFeature", "BGPFeature", "WhoisFeature",
             ]
         ),
 
@@ -45,7 +46,7 @@ let package = Package(
             name: "FeatureTests",
             dependencies: [
                 "NetCore", "RIPEstat", "BGPGraph", "SharedUI",
-                "PingFeature", "TraceFeature", "BGPFeature", "AppShell",
+                "PingFeature", "TraceFeature", "BGPFeature", "WhoisFeature", "AppShell",
             ]
         ),
     ],

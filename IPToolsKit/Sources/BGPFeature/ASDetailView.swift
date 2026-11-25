@@ -181,6 +181,11 @@ struct ASDetailView: View {
                     .frame(maxWidth: .infinity)
             }
             .buttonStyle(.borderedProminent)
+            Button { model.whois("AS\(asn)") } label: {
+                Label("Whois AS\(String(asn))", systemImage: Tool.whois.systemImage)
+                    .frame(maxWidth: .infinity)
+            }
+            .buttonStyle(.bordered)
             HStack {
                 Button { Clipboard.copy("AS\(asn)") } label: {
                     Label("Copy ASN", systemImage: "doc.on.doc").frame(maxWidth: .infinity)
