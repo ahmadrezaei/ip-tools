@@ -21,6 +21,7 @@
   <img src="docs/screenshots/iphone-ping.png" width="200" alt="Ping screen: live round-trip time chart with min, avg, max, jitter and packet loss">
   <img src="docs/screenshots/iphone-traceroute.png" width="200" alt="Traceroute screen: every hop with response times and the ASN of each router">
   <img src="docs/screenshots/iphone-bgp-map.png" width="200" alt="BGP map: AS paths from RIPE RIS collectors down to the origin AS, with your own path in blue">
+  <img src="docs/screenshots/iphone-whois.png" width="200" alt="Whois screen: your public IPv4 and IPv6 address with the whois of your network">
 </p>
 
 ---
