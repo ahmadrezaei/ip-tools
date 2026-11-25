@@ -10,6 +10,7 @@ public struct WhoisView: View {
 
     @Environment(\.isOnline) private var isOnline
     @Environment(\.horizontalSizeClass) private var sizeClass
+    @Environment(\.scenePhase) private var scenePhase
 
     public init(model: WhoisModel) {
         self.model = model
@@ -44,6 +45,7 @@ public struct WhoisView: View {
         }
         .onChange(of: model.router.requestTick) { model.consumeRouterRequest() }
         .onChange(of: model.pathGeneration) { model.pathGenerationChanged() }
+        .onChange(of: scenePhase) { _, phase in if phase == .active { model.resumeFromBackground() } }
         .onChange(of: model.phase) { _, phase in announce(phase) }
         .onChange(of: model.myIP) { _, snapshot in
             if let snapshot, !snapshot.isChecking, model.isMyIPMode, snapshot.foundAny {
@@ -82,11 +84,9 @@ public struct WhoisView: View {
         }
     }
 
-    /// ⌘⇧C copies the summary, ⌘⇧M returns to My IP.
+    /// ⌘⇧M returns to My IP (⌘⇧C is the shell's Copy Results).
     private var shortcuts: some View {
         VStack {
-            Button("Copy Summary") { Clipboard.copy(model.exportText) }
-                .keyboardShortcut("c", modifiers: [.command, .shift])
             Button("My IP") { model.showMyIP() }
                 .keyboardShortcut("m", modifiers: [.command, .shift])
         }

@@ -57,6 +57,15 @@ import Testing
         #expect(DeviceInterpretation.line(local: [], publicV4: nil, publicV6: nil) == nil)
     }
 
+    @Test func natKindMatchesTheFirstTwoRules() {
+        let cgnat = [local(.cellular, "100.72.13.5")]
+        #expect(DeviceInterpretation.isBehindNAT(local: cgnat, publicV4: nil))
+        let wifi = [local(.wifi, "192.168.1.2")]
+        #expect(DeviceInterpretation.isBehindNAT(local: wifi, publicV4: ip("193.0.6.139")))
+        #expect(!DeviceInterpretation.isBehindNAT(local: wifi, publicV4: nil))
+        #expect(!DeviceInterpretation.isBehindNAT(local: [local(.wifi, "2001:db8::1")], publicV4: ip("193.0.6.139")))
+    }
+
     @Test func sharedSpaceBoundaries() {
         #expect(DeviceInterpretation.isSharedSpace(ip("100.64.0.1")))
         #expect(DeviceInterpretation.isSharedSpace(ip("100.127.255.254")))
@@ -156,6 +165,7 @@ import Testing
         #expect(RawRecordsView.statResource(URL(string: "https://stat.ripe.net/AS3333")!) == "AS3333")
         #expect(RawRecordsView.statResource(URL(string: "https://stat.ripe.net/app/x")!) == nil)
         #expect(RawRecordsView.statResource(URL(string: "https://stat.ripe.net/")!) == nil)
+        #expect(RawRecordsView.statResource(URL(string: "https://stat.ripe.net/ORG-RIEN1-RIPE")!) == nil)
         #expect(RawRecordsView.statResource(URL(string: "https://example.com/AS3333")!) == nil)
         #expect(RawRecordsView.statResource(URL(string: "http://stat.ripe.net/AS3333")!) == nil)
     }

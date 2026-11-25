@@ -192,13 +192,17 @@ struct WhoisResultSection: View {
 
     var body: some View {
         WhoisContextLine(text: contextText, secondary: contextSecondary, onBack: { model.showMyIP() },
-                         others: model.hostAddresses, onPickOther: { model.lookUp($0.description) })
+                         others: model.hostAddresses, onPickOther: { pickOther($0) })
         WhoisSummaryCard(result: result, showsReverseName: isAddress, onLookUp: { model.lookUp($0) },
                          onRetry: { model.lookUp() })
         WhoisActions(showsPing: result.subject.canProbe, showsTrace: result.subject.canProbe,
                      onPing: { model.ping() }, onTrace: { model.trace() }, onMap: { model.map() })
         if showsRecordLinks { WhoisRecordsLinks(model: model, result: result) }
         WhoisSourceFootnote(result: result)
+    }
+
+    private func pickOther(_ address: IPAddress) {
+        if case let .address(_, host?) = result.subject { model.lookUp(address: address, hostname: host) }
     }
 
     private var isAddress: Bool { if case .address = result.subject { true } else { false } }

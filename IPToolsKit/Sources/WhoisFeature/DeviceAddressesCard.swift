@@ -26,6 +26,12 @@ enum DeviceInterpretation {
         return nil
     }
 
+    /// CGNAT or a private address next to a public one (interpretation rules 1 and 2).
+    static func isBehindNAT(local: [LocalAddress], publicV4: IPAddress?) -> Bool {
+        let v4 = local.filter { $0.address.family == .v4 }
+        return v4.contains { isSharedSpace($0.address) } || (publicV4 != nil && v4.contains { isPrivate($0.address) })
+    }
+
     /// 100.64.0.0/10
     static func isSharedSpace(_ address: IPAddress) -> Bool {
         address.family == .v4 && address.bytes[0] == 100 && address.bytes[1] & 0xC0 == 0x40
@@ -93,7 +99,7 @@ struct DeviceAddressesCard: View {
 
     private var summaryLine: String {
         guard let first = addresses.first else { return String(localized: "No addresses") }
-        let nat = DeviceInterpretation.line(local: addresses, publicV4: publicV4, publicV6: publicV6) != nil
+        let nat = DeviceInterpretation.isBehindNAT(local: addresses, publicV4: publicV4)
         return "\(first.interface.title(first.name)) \(first.address.description)" + (nat ? " · " + String(localized: "behind NAT") : "")
     }
 

@@ -247,4 +247,30 @@ import Testing
         #expect(text.contains("IPv6  \(v6)"))
         #expect(text.hasSuffix("— IP Tools for iOS"))
     }
+
+    @Test func returningFromBackgroundReloadsWhatWasStopped() async {
+        let api = api()
+        let model = makeWhoisModel(api: api)
+        model.appeared()
+        #expect(await settled(model))
+        api.delay = .seconds(5)
+        model.myFamily = .v6
+        #expect(await waitUntil { model.myWhois[.v6] == .loading })
+        model.stopForBackground()
+        api.delay = nil
+        model.resumeFromBackground()
+        #expect(await waitUntil { isLoaded(model, .v6) })
+    }
+
+    @Test func returningFromBackgroundRechecksFailedRows() async {
+        let api = api()
+        api.delay = .seconds(5)
+        let model = makeWhoisModel(api: api)
+        model.appeared()
+        #expect(await waitUntil { model.myIP != nil })
+        model.stopForBackground()
+        api.delay = nil
+        model.resumeFromBackground()
+        #expect(await waitUntil { model.myIP?.address(.v4) != nil && model.myIP?.address(.v6) != nil })
+    }
 }

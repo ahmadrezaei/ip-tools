@@ -86,6 +86,7 @@ struct WhoisNetworkState {
     @ObservationIgnored private var runTask: Task<Void, Never>?
     @ObservationIgnored private var myIPTask: Task<Void, Never>?
     @ObservationIgnored private var myIPRun = 0
+    @ObservationIgnored private var myIPTaskGeneration = 0
     @ObservationIgnored private var debounceTask: Task<Void, Never>?
     @ObservationIgnored private var myWhoisTasks: [IPVersion: Task<Void, Never>] = [:]
     @ObservationIgnored private var myWhoisAddress: [IPVersion: IPAddress] = [:]
@@ -188,12 +189,31 @@ struct WhoisNetworkState {
     /// Parses `targetText` (TargetParser .bgp).
     public func lookUp() {
         let text = targetText.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !text.isEmpty else { return }
         guard let classified = Self.classify(text, rules: rules) else {
             stopRunning()
             phase = .failed(.invalidInput)
             return
         }
         start(classified, text: text)
+    }
+
+    /// "Other addresses": looks up another address of the same host name and keeps the host context.
+    func lookUp(address: IPAddress, hostname: String) {
+        let others = hostAddresses
+        targetText = hostname
+        stopRunning()
+        shownAs = nil
+        let id = runID
+        recents.record(hostname, tool: .whois)
+        switch Self.classifyAddress(address, hostname: hostname, input: hostname, rules: rules) {
+        case let .local(verdict): phase = .local(verdict)
+        case let .subject(subject):
+            phase = .loading(subject)
+            runTask = Task { [weak self] in await self?.run(subject, id: id) }
+        case .hostname: break
+        }
+        hostAddresses = others
     }
 
     /// Drill-down / raw link / embedded IPv4: sets `targetText` too.
@@ -330,7 +350,7 @@ struct WhoisNetworkState {
     public func appeared() {
         visible = true
         localAddresses = readLocalAddresses()
-        guard myIPTask == nil, !myIPIsFresh else { return }
+        guard myIPTask == nil || myIPTaskGeneration != pathGeneration, !myIPIsFresh else { return }
         loadMyIP(force: false)
     }
 
@@ -377,6 +397,7 @@ struct WhoisNetworkState {
         myIPRun += 1
         let run = myIPRun
         let state = networkState()
+        myIPTaskGeneration = state.generation
         localAddresses = readLocalAddresses()
         guard state.online else {
             myIPTask = nil
@@ -485,6 +506,15 @@ struct WhoisNetworkState {
             if snapshot.v6 == .checking { snapshot.v6 = .failed(message) }
             myIP = snapshot
         }
+    }
+
+    /// The app is active again: pick up what the background stop interrupted.
+    func resumeFromBackground() {
+        for family in IPVersion.allCases where myWhois[family] == .failed(.backgrounded) {
+            myWhois[family] = nil
+        }
+        if visible { appeared() }
+        loadMyWhoisIfNeeded()
     }
 
     // MARK: Export

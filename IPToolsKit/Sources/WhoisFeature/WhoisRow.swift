@@ -81,7 +81,7 @@ struct WhoisRow<Value: View>: View {
 extension WhoisRow where Value == Text {
     /// A selectable text value with an optional provenance caption.
     init(_ key: LocalizedStringKey, text: String, spoken: String? = nil) {
-        self.init(key, spoken: spoken ?? "\(key), \(text)") { Text(text) }
+        self.init(key, spoken: spoken) { Text(text) }
     }
 }
 

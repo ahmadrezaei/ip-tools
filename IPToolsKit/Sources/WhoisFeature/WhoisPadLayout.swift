@@ -8,8 +8,9 @@ import SwiftUI
 struct WhoisPadLayout: View {
     @Bindable var model: WhoisModel
 
-    /// Windows at least this wide open with the inspector shown.
-    static let inspectorWidth: CGFloat = 1100
+    /// Detail columns at least this wide open with the inspector shown (a 1100 pt window leaves about 800 pt
+    /// next to the sidebar).
+    static let inspectorWidth: CGFloat = 760
 
     var body: some View {
         GeometryReader { proxy in

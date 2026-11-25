@@ -288,4 +288,25 @@ import Testing
         #expect(model.exportText.hasPrefix("WHOIS 8.8.8.8 (rev.example)"))
         #expect(model.exportFullText.contains("NetRange:"))
     }
+
+    @Test func emptyFieldLookUpDoesNothing() {
+        let api = WhoisFakeAPI()
+        let model = makeWhoisModel(api: api)
+        model.targetText = "  "
+        model.lookUp()
+        #expect(model.phase == .myIP)
+        #expect(api.calls.isEmpty)
+    }
+
+    @Test func otherAddressKeepsTheHostContext() async {
+        let api = WhoisFakeAPI()
+        sampleNetwork(api, ip: "17.253.144.10", prefix: "17.253.0.0/16", origins: [])
+        sampleNetwork(api, ip: "17.253.144.11", prefix: "17.253.0.0/16", origins: [])
+        let model = makeWhoisModel(api: api, resolve: resolver("17.253.144.10", host: "apple.com", others: ["17.253.144.11"]))
+        model.lookUp("apple.com")
+        #expect(await waitUntil { loaded(model) != nil })
+        model.lookUp(address: ip("17.253.144.11"), hostname: "apple.com")
+        #expect(await waitUntil { loaded(model)?.subject == .address(ip("17.253.144.11"), hostname: "apple.com") })
+        #expect(model.hostAddresses.count == 2)
+    }
 }

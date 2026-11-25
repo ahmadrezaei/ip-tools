@@ -127,13 +127,14 @@ struct MyIPRow: View {
         }
         .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
         .contentShape(Rectangle())
-        .onTapGesture { if snapshot.address(version) != nil { model.myFamily = version } }
+        .onTapGesture { select() }
         .contextMenu { menu }
         .accessibilityElement(children: .ignore)
         .accessibilityLabel(spokenLabel)
-        .accessibilityAddTraits(isSelected ? [.isSelected] : [])
+        .accessibilityAddTraits(snapshot.address(version) != nil ? [.isButton] : [])
         .accessibilityAction(named: Text("Copy")) { copy() }
-        .modifier(MyIPAccessibilityActions(model: model, snapshot: snapshot, version: version, isSelected: isSelected))
+        .modifier(MyIPAccessibilityActions(model: model, snapshot: snapshot, version: version, isSelected: isSelected,
+                                           select: select))
     }
 
     @ViewBuilder private var content: some View {
@@ -183,6 +184,12 @@ struct MyIPRow: View {
         }
     }
 
+    private func select() {
+        guard snapshot.address(version) != nil else { return }
+        if !model.isMyIPMode { model.showMyIP() }
+        model.myFamily = version
+    }
+
     private func copy() {
         if let address = snapshot.address(version) { Clipboard.copy(address.description) }
     }
@@ -201,19 +208,25 @@ struct MyIPRow: View {
     }
 }
 
-/// Show whois / Map in BGP / Retry as VoiceOver actions.
+/// Show whois (when it isn't shown), Map in BGP and Retry as VoiceOver actions.
 private struct MyIPAccessibilityActions: ViewModifier {
     let model: WhoisModel
     let snapshot: MyIPSnapshot
     let version: IPVersion
     let isSelected: Bool
+    let select: () -> Void
 
     func body(content: Content) -> some View {
         let found = snapshot.address(version) != nil
+        let failed = if case .failed = snapshot.slot(version) { true } else { false }
         content
-            .accessibilityAction(named: Text("Show whois")) { if found, !isSelected { model.myFamily = version } }
-            .accessibilityAction(named: Text("Map in BGP")) { if found { model.mapMyIP(version) } }
-            .accessibilityAction(named: Text("Retry")) { model.refreshMyIP() }
+            .accessibilityActions {
+                if found, !isSelected || !model.isMyIPMode {
+                    Button("Show whois", action: select)
+                }
+                if found { Button("Map in BGP") { model.mapMyIP(version) } }
+                if failed { Button("Retry") { model.refreshMyIP() } }
+            }
     }
 }
 

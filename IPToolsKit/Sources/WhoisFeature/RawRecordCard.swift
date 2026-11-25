@@ -107,6 +107,7 @@ struct RawRecordCard: View {
             VStack(alignment: .leading, spacing: 2) {
                 Text(RawRecordLayout.title(record) + (headerSuffix.map { " · \($0)" } ?? ""))
                     .font(.subheadline.weight(.semibold))
+                    .accessibilityAddTraits(.isHeader)
                 if isUsedInSummary {
                     Text("Used in summary").font(.caption2.weight(.semibold)).foregroundStyle(.tint)
                 }
@@ -123,8 +124,6 @@ struct RawRecordCard: View {
         }
         .padding(.horizontal, 14)
         .padding(.vertical, 10)
-        .accessibilityElement(children: .contain)
-        .accessibilityAddTraits(.isHeader)
     }
 }
 
