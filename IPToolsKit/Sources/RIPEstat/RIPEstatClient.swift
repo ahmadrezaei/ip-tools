@@ -12,11 +12,27 @@ public protocol RIPEstatAPI: Sendable {
     func announcedPrefixes(_ asn: UInt32) async throws -> [String]
     func routingStatus(_ prefix: String) async throws -> RoutingStatus
     func whatsMyIP() async throws -> WhatsMyIP        // GET whats-my-ip/data.json, never cached, 10 s timeout
+    func whatsMyIP(over version: IPVersion) async throws -> WhatsMyIP     // NWConnection pinned family, never cached, 8 s
+    func whois(_ resource: String) async throws -> WhoisResponse          // "8.8.8.8", "1.1.1.0/24", "AS13335"
+    func abuseContacts(_ resource: String) async throws -> AbuseContacts  // abuse-contact-finder
+    func registeredCountry(_ resource: String) async throws -> String?    // rir-stats-country, first location
+    func geolocation(_ ip: String) async throws -> GeoLocation?           // maxmind-geo-lite, first location
 }
 
 public extension RIPEstatAPI {
     /// Keeps existing test fakes compiling.
     func whatsMyIP() async throws -> WhatsMyIP { throw RIPEstatError.api(messages: ["whats-my-ip not supported"]) }
+    func whatsMyIP(over version: IPVersion) async throws -> WhatsMyIP {
+        throw RIPEstatError.api(messages: ["whats-my-ip(over:) not supported"])
+    }
+    func whois(_ resource: String) async throws -> WhoisResponse {
+        throw RIPEstatError.api(messages: ["whois not supported"])
+    }
+    func abuseContacts(_ resource: String) async throws -> AbuseContacts {
+        throw RIPEstatError.api(messages: ["abuse-contact-finder not supported"])
+    }
+    func registeredCountry(_ resource: String) async throws -> String? { nil }
+    func geolocation(_ ip: String) async throws -> GeoLocation? { nil }
 }
 
 public enum RIPEstatError: Error, Sendable, Equatable {
@@ -57,6 +73,17 @@ public final class RIPEstatClient: RIPEstatAPI, Sendable {
     }
 
     // MARK: RIPEstatAPI
+
+    // Step 0 stubs for the whois calls (DESIGN §14.15.3); replaced by the data layer.
+    public func whatsMyIP(over version: IPVersion) async throws -> WhatsMyIP { throw PublicIPError.noRoute(version) }
+    public func whois(_ resource: String) async throws -> WhoisResponse {
+        throw RIPEstatError.api(messages: ["whois not implemented"])
+    }
+    public func abuseContacts(_ resource: String) async throws -> AbuseContacts {
+        throw RIPEstatError.api(messages: ["abuse-contact-finder not implemented"])
+    }
+    public func registeredCountry(_ resource: String) async throws -> String? { nil }
+    public func geolocation(_ ip: String) async throws -> GeoLocation? { nil }
 
     public func networkInfo(_ ip: String) async throws -> NetworkInfo {
         try RIPEstatParsing.networkInfo(try await fetch("network-info", resource: ip))

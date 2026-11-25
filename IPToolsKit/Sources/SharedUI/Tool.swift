@@ -4,7 +4,7 @@
 import SwiftUI
 
 public enum Tool: String, CaseIterable, Codable, Identifiable, Sendable {
-    case ping, traceroute, bgp
+    case ping, traceroute, bgp, whois
     public var id: String { rawValue }
 
     public var title: LocalizedStringKey {
@@ -12,6 +12,7 @@ public enum Tool: String, CaseIterable, Codable, Identifiable, Sendable {
         case .ping: "Ping"
         case .traceroute: "Traceroute"
         case .bgp: "BGP Map"
+        case .whois: "Whois"
         }
     }
 
@@ -20,6 +21,7 @@ public enum Tool: String, CaseIterable, Codable, Identifiable, Sendable {
         case .ping: "dot.radiowaves.left.and.right"
         case .traceroute: "point.topleft.down.to.point.bottomright.curvepath"
         case .bgp: "point.3.connected.trianglepath.dotted"
+        case .whois: "person.text.rectangle"
         }
     }
 }

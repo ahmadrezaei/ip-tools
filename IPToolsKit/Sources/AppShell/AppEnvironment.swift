@@ -8,10 +8,11 @@ import PingFeature
 import RIPEstat
 import SharedUI
 import TraceFeature
+import WhoisFeature
 
 @MainActor public final class AppEnvironment {
     public let router: AppRouter, recents: RecentsStore, settings: SettingsStore, network: NetworkMonitor
-    public let ping: PingModel, trace: TraceModel, bgp: BGPMapModel
+    public let ping: PingModel, trace: TraceModel, bgp: BGPMapModel, whois: WhoisModel
 
     private init(router: AppRouter, recents: RecentsStore, settings: SettingsStore, network: NetworkMonitor,
                  pingService: any PingService, traceService: any TraceService, api: any RIPEstatAPI) {
@@ -24,6 +25,7 @@ import TraceFeature
                                 recents: recents, router: router)
         self.bgp = BGPMapModel(api: api, recents: recents, router: router, traceService: traceService,
                                settings: settings, network: network)
+        self.whois = WhoisModel(api: api, recents: recents, router: router, settings: settings, network: network)
     }
 
     /// Pinger, Tracer, RIPEstatClient.

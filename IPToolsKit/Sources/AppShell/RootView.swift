@@ -29,6 +29,7 @@ public struct RootView: View {
                     environment.ping.stopForBackground()
                     environment.trace.stopForBackground()
                     environment.bgp.stopForBackground()
+                    environment.whois.stopForBackground()
                 } else if scenePhase == .active {
                     environment.bgp.resumeFromBackground()
                 }
@@ -54,6 +55,7 @@ public struct RootView: View {
             Button("Ping") { router.selectedTool = .ping }.keyboardShortcut("1", modifiers: .command)
             Button("Traceroute") { router.selectedTool = .traceroute }.keyboardShortcut("2", modifiers: .command)
             Button("BGP Map") { router.selectedTool = .bgp }.keyboardShortcut("3", modifiers: .command)
+            Button("Whois") { router.selectedTool = .whois }.keyboardShortcut("4", modifiers: .command)
             Button("Focus Target") { router.focusTarget() }.keyboardShortcut("l", modifiers: .command)
             Button("Start") { startCurrent() }.keyboardShortcut("r", modifiers: .command)
             Button("Stop") { stopCurrent() }.keyboardShortcut(".", modifiers: .command)
@@ -71,6 +73,7 @@ public struct RootView: View {
         case .ping: environment.ping.start()
         case .traceroute: environment.trace.start()
         case .bgp: environment.bgp.map()
+        case .whois: environment.whois.lookUp()
         }
     }
 
@@ -79,6 +82,7 @@ public struct RootView: View {
         case .ping: environment.ping.stop()
         case .traceroute: environment.trace.stop()
         case .bgp: environment.bgp.cancel()
+        case .whois: environment.whois.cancel()
         }
     }
 
@@ -87,6 +91,7 @@ public struct RootView: View {
         case .ping: environment.ping.exportText
         case .traceroute: environment.trace.exportText
         case .bgp: environment.bgp.exportText
+        case .whois: environment.whois.exportText
         }
         if !text.isEmpty { Clipboard.copy(text) }
     }

@@ -6,6 +6,7 @@ import PingFeature
 import SharedUI
 import SwiftUI
 import TraceFeature
+import WhoisFeature
 
 struct PhoneTabsView: View {
     let environment: AppEnvironment
@@ -22,6 +23,9 @@ struct PhoneTabsView: View {
             NavigationStack { BGPMapView(model: environment.bgp) }
                 .tabItem { Label(Tool.bgp.title, systemImage: Tool.bgp.systemImage) }
                 .tag(Tool.bgp)
+            NavigationStack { WhoisView(model: environment.whois) }
+                .tabItem { Label(Tool.whois.title, systemImage: Tool.whois.systemImage) }
+                .tag(Tool.whois)
         }
     }
 }

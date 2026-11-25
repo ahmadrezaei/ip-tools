@@ -6,7 +6,7 @@ import Foundation
 import SharedUI
 
 /// DEBUG-only launch-argument driver for App Store screenshots (no taps needed):
-/// `-screenshotTool ping|traceroute|bgp -screenshotTarget <text> [-screenshotExpandHeader YES] [-screenshotPingCount <n>]`
+/// `-screenshotTool ping|traceroute|bgp|whois -screenshotTarget <text> [-screenshotExpandHeader YES] [-screenshotPingCount <n>]`
 struct ScreenshotMode: Equatable {
     var tool: Tool
     var target: String?
@@ -24,6 +24,7 @@ struct ScreenshotMode: Equatable {
         case "ping": tool = .ping
         case "traceroute", "trace": tool = .traceroute
         case "bgp": tool = .bgp
+        case "whois": tool = .whois
         default: return nil
         }
         target = value("-screenshotTarget").flatMap { $0.isEmpty ? nil : $0 }

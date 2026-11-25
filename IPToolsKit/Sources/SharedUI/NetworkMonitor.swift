@@ -9,6 +9,12 @@ import Observation
     public private(set) var isOnline: Bool = true
     /// +1 on every satisfied path update (so Wi-Fi to Wi-Fi switches count) and whenever the status or interfaces change.
     public private(set) var pathGeneration: Int = 0
+    /// `NWPath.supportsIPv4` of the latest path.
+    public private(set) var supportsIPv4: Bool = true
+    /// `NWPath.supportsIPv6` of the latest path.
+    public private(set) var supportsIPv6: Bool = true
+    /// `NWPath.usesInterfaceType(.other)` while the path is satisfied.
+    public private(set) var usesVPN: Bool = false
     @ObservationIgnored private let monitor = NWPathMonitor()
     @ObservationIgnored private var lastSignature: PathSignature?
     @ObservationIgnored private var lastUpdate: Date?
@@ -37,8 +43,13 @@ import Observation
         monitor.pathUpdateHandler = { [weak self] path in
             let online = path.status == .satisfied
             let signature = PathSignature(path)
+            let v4 = path.supportsIPv4, v6 = path.supportsIPv6
+            let vpn = online && path.usesInterfaceType(.other)
             Task { @MainActor in
                 self?.isOnline = online
+                self?.supportsIPv4 = v4
+                self?.supportsIPv6 = v6
+                self?.usesVPN = vpn
                 self?.apply(signature)
             }
         }

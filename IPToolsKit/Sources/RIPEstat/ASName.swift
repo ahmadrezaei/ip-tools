@@ -3,6 +3,11 @@
 
 import Foundation
 
+public extension ASName {
+    /// Rule 1 only (strip the leading handle), suffix kept.
+    static func holderName(_ holder: String) -> String { fatalError("TODO") }
+}
+
 public enum ASName {
     private static let suffixes = rawSuffixes.sorted { $0.count > $1.count }   // longest match wins (" Pte. Ltd." before " Ltd.")
     private static let rawSuffixes = [
